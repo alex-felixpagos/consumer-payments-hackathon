@@ -15,13 +15,14 @@ Build a **conversational product** that solves a real problem.
 
 - **Your mission:** Pick a problem, design a WhatsApp conversation flow, and ship a working demo.
 - **Team goal:** Create the most useful, creative, and polished conversational experience you can in hackathon time.
+- **Deadline:** Final push to `main` by **Wednesday at 5pm** (clarify timezone with organizers if unsure).
 - **How we pick a winner:** Everyone votes for their favorite project, and the team with the coolest project wins. 🎉
 
 Think of this starter as your launchpad: focus your energy on the conversation, user value, and demo story.
 
 ---
 
-## IMPORTANT - Project requirements ✅ 
+## IMPORTANT - Project requirements ✅
 
 To be considered a successful hackathon submission, teams should follow these rules:
 

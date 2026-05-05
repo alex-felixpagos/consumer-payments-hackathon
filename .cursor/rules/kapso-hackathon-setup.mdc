@@ -7,6 +7,15 @@ alwaysApply: true
 
 When the user wants to **run the project**, **set up their environment**, or **get Kapso working**, treat them as potentially non-technical. Guide step-by-step; offer to **run terminal commands for them** in this repo (venv, pip, uvicorn, ngrok).
 
+## Hackathon context
+
+- Objective: help teams build a conversational product that solves a real problem.
+- Deadline: final push to `main` by **Wednesday at 5pm** (confirm timezone with organizers).
+- Project requirements to remind teams about when relevant:
+  1. Core implementation should be vibe-coded with Cursor Agent.
+  2. Every teammate should push at least one code change.
+  3. Build something fun and exciting to demo.
+
 ## Goal
 
 Two processes must run locally: **(1) the API** and **(2) ngrok**. Kapso sends webhooks to the **public HTTPS URL** ngrok provides, which forwards to `localhost`.
@@ -66,6 +75,7 @@ Two processes must run locally: **(1) the API** and **(2) ngrok**. Kapso sends w
 7. **Quick checks**
 
    - Browser: `http://127.0.0.1:8000/health` should respond.
+   - API key smoke test: `curl -s http://127.0.0.1:8000/api/kapso/account` should return JSON (including `{"data":[]}` for a valid key with no integrations).
    - Optional demo send (**no ngrok**): from repo root, `python -m app.send_demo_message --to "+1…"` — message appears on their WhatsApp from the Kapso number (use their sandbox‑registered phone in E.164).
    - If WhatsApp replies don’t trigger the bot: confirm both terminals are running, ngrok URL in Kapso is **current** (free ngrok URLs change after restart), and the path is exactly **`/webhooks/whatsapp`** (not cut off in the Kapso URL field).
 
