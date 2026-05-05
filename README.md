@@ -7,6 +7,8 @@
 
 **Build a bot people can actually text.** This repo is a small [FastAPI](https://fastapi.tiangolo.com/) backend wired to [Kapso](https://docs.kapso.ai/docs/introduction) so your team can **send and receive** WhatsApp messages in a sandbox, iterate locally, and focus on the *conversation*—not plumbing.
 
+**Python:** **3.12** (pinned in [`.python-version`](.python-version); use **3.11+** if you cannot install 3.12). **License:** [MIT](LICENSE).
+
 ---
 
 ## Hackathon objective 🏆
@@ -96,6 +98,17 @@ python -m app.send_demo_message --to "+1XXXXXXXXXX"
 - `GET /webhooks/whatsapp` — Kapso/Meta webhook verification
 - `POST /webhooks/whatsapp` — inbound events → `app/bot.py`
 - `POST /api/send-text` — manual outbound (Swagger: `/docs`)
+
+---
+
+## Run tests 🧪
+
+Light **integration** tests hit the FastAPI app in-process (`TestClient`)—no Kapso credentials or network calls required.
+
+```bash
+pip install -r requirements.txt
+pytest
+```
 
 ---
 
