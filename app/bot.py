@@ -72,6 +72,9 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     )
 
     _WELCOME_TRIGGER = "hey biovibe, i'm ready to start tracking my health!"
+    # Public URL of the hero image — update to your Netlify/GitHub Pages domain after deploy
+    _WELCOME_IMAGE_URL = "https://biovibe.netlify.app/biovibe-hero.png"
+
     if text and text.strip().lower() == _WELCOME_TRIGGER:
         welcome = (
             "Welcome to BioVibe! 🌱\n\n"
@@ -83,7 +86,16 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             "I'll remember everything and share insights to help you feel your best.\n\n"
             "What would you like to track first?"
         )
-        logger.info("OUTBOUND | to=%s message=<welcome>", msg.phone_number)
+        logger.info("OUTBOUND | to=%s message=<welcome image + text>", msg.phone_number)
+        try:
+            await client.send_media_message(
+                msg.phone_number,
+                "image",
+                _WELCOME_IMAGE_URL,
+                caption="BioVibe — AI Health Tracking on WhatsApp 🌱",
+            )
+        except Exception:
+            logger.warning("Could not send welcome image; falling back to text-only")
         await client.send_whatsapp_message(msg.phone_number, welcome)
         return
 
