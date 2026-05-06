@@ -9,6 +9,35 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+WHATSAPP_TEXT_BODY_LIMIT = 4096
+
+
+def split_whatsapp_text(text: str, max_length: int = WHATSAPP_TEXT_BODY_LIMIT) -> list[str]:
+    """Split outbound text into WhatsApp-sized chunks, preferring natural breaks."""
+    if len(text) <= max_length:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > max_length:
+        split_at = max_length
+        for separator in ("\n\n", "\n", " "):
+            candidate = remaining.rfind(separator, 0, max_length + 1)
+            if candidate >= max_length // 2:
+                split_at = candidate
+                break
+
+        chunk = remaining[:split_at].rstrip()
+        if not chunk:
+            chunk = remaining[:max_length]
+
+        chunks.append(chunk)
+        remaining = remaining[len(chunk) :].lstrip()
+
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
 
 class KapsoClient:
     """
@@ -49,13 +78,24 @@ class KapsoClient:
         return to.lstrip("+")
 
     async def send_whatsapp_message(self, to: str, text: str) -> dict[str, Any]:
-        payload = {
-            "messaging_product": "whatsapp",
-            "to": self._normalize_to(to),
-            "type": "text",
-            "text": {"body": text},
-        }
-        return await self._post_messages(payload, f"text to {to}")
+        chunks = split_whatsapp_text(text)
+        if len(chunks) > 1:
+            logger.info("Splitting long WhatsApp text to %s into %s messages", to, len(chunks))
+
+        result: dict[str, Any] = {}
+        for index, chunk in enumerate(chunks, start=1):
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": self._normalize_to(to),
+                "type": "text",
+                "text": {"body": chunk},
+            }
+            label = f"text to {to}"
+            if len(chunks) > 1:
+                label = f"{label} part {index}/{len(chunks)}"
+            result = await self._post_messages(payload, label)
+        return result
+
 
     async def send_template_message(
         self,
