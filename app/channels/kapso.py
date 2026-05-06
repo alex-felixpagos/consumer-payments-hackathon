@@ -12,6 +12,9 @@ class KapsoChannel:
     async def send_text(self, to: str, body: str) -> None:
         await self._client.send_whatsapp_message(to, body)
 
+    async def send_image(self, to: str, url: str, caption: str | None = None) -> None:
+        await self._client.send_media_message(to, "image", url, caption=caption)
+
 
 def get_default_channel() -> KapsoChannel:
     """Build the default channel from app settings. Raises if Kapso is unconfigured."""

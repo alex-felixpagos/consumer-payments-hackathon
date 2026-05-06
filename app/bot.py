@@ -2,7 +2,8 @@
 Inbound WhatsApp handling.
 
 Thin orchestrator: parse text from the channel-specific message, ask the
-concierge agent for a reply, send it back through the channel.
+concierge agent for a reply, send it (and any attached chart images) back
+through the channel.
 """
 
 import logging
@@ -56,6 +57,13 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient | Channel) -> No
         reply = await respond(user_id, user_text)
     except Exception:
         logger.exception("concierge.respond failed")
-        reply = system_message(get_locale(user_id), "agent_error")
+        await channel.send_text(user_id, system_message(get_locale(user_id), "agent_error"))
+        return
 
-    await channel.send_text(user_id, reply)
+    await channel.send_text(user_id, reply.text)
+    for attachment in reply.media:
+        try:
+            if attachment.kind == "image":
+                await channel.send_image(user_id, attachment.url, caption=attachment.caption)
+        except Exception:
+            logger.exception("failed to send attachment %s", attachment.url)

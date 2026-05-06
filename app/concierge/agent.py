@@ -2,13 +2,16 @@
 Claude agent loop. Channel-agnostic.
 
 Public surface:
-    respond(user_id: str, user_text: str) -> str
+    respond(user_id: str, user_text: str) -> AgentReply
 
 The LLM owns extraction, decision-making, and phrasing. Tools own data and math.
+Tools whose results carry an image URL (see tools.MEDIA_PRODUCING_TOOLS) are
+collected as media attachments and returned alongside the text.
 """
 
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 from anthropic import Anthropic
@@ -19,8 +22,21 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ITERATIONS = 6
+MAX_TOOL_ITERATIONS = 8
 MAX_OUTPUT_TOKENS = 1024
+
+
+@dataclass
+class MediaAttachment:
+    url: str
+    caption: str | None = None
+    kind: str = "image"
+
+
+@dataclass
+class AgentReply:
+    text: str
+    media: list[MediaAttachment] = field(default_factory=list)
 
 
 _client: Anthropic | None = None
@@ -46,8 +62,18 @@ def _content_to_text(content: list[Any]) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
-async def respond(user_id: str, user_text: str) -> str:
-    """Run the agent for one user turn and return the assistant's text reply."""
+def _maybe_collect_media(tool_name: str, result: dict[str, Any]) -> MediaAttachment | None:
+    if tool_name not in tools.MEDIA_PRODUCING_TOOLS:
+        return None
+    url = result.get("url") if isinstance(result, dict) else None
+    if not url:
+        return None
+    caption = result.get("caption") if isinstance(result, dict) else None
+    return MediaAttachment(url=url, caption=caption, kind="image")
+
+
+async def respond(user_id: str, user_text: str) -> AgentReply:
+    """Run the agent for one user turn and return text + any media attachments."""
     settings = get_settings()
     client = _get_client()
 
@@ -55,7 +81,9 @@ async def respond(user_id: str, user_text: str) -> str:
     history = state.get_history(user_id)
     history.append({"role": "user", "content": user_text})
 
+    media: list[MediaAttachment] = []
     final_text = ""
+
     for _ in range(MAX_TOOL_ITERATIONS):
         response = client.messages.create(
             model=settings.anthropic_model,
@@ -72,8 +100,11 @@ async def respond(user_id: str, user_text: str) -> str:
             for block in response.content:
                 if getattr(block, "type", None) != "tool_use":
                     continue
-                result = tools.run_tool(block.name, block.input or {})
+                result = tools.run_tool(block.name, block.input or {}, user_id=user_id)
                 logger.info("tool %s -> %s", block.name, result)
+                attachment = _maybe_collect_media(block.name, result)
+                if attachment is not None:
+                    media.append(attachment)
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -89,4 +120,4 @@ async def respond(user_id: str, user_text: str) -> str:
 
     if not final_text:
         final_text = system_message(locale, "agent_empty")
-    return final_text
+    return AgentReply(text=final_text, media=media)

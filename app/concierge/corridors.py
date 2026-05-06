@@ -1,5 +1,7 @@
 """Mock Felix corridor data. Replace with a real source when wiring production."""
 
+import math
+import random
 from typing import TypedDict
 
 
@@ -12,63 +14,88 @@ class Corridor(TypedDict):
     fx_history: list[float]
 
 
-FELIX_CORRIDORS: dict[str, Corridor] = {
-    "Mexico": {
-        "currency": "MXN",
-        "fx_rate": 16.9,
-        "fee_usd": 2.99,
-        "methods": ["cash_pickup", "bank_deposit"],
-        "typical_speed": {
-            "cash_pickup": "minutes",
-            "bank_deposit": "same day",
+def _generate_fx_history(
+    *, today_rate: float, days: int, drift_pct: float, noise_pct: float, seed: int
+) -> list[float]:
+    """
+    Generate a deterministic ~30-day daily FX series ending at `today_rate`.
+
+    drift_pct: total drift over the window (e.g. +0.012 = ended ~1.2% above the start).
+    noise_pct: stddev of daily noise as fraction of rate (e.g. 0.003 = 0.3% daily).
+
+    Reproducible per corridor via `seed`. The last element equals today_rate exactly.
+    """
+    rng = random.Random(seed)
+    start = today_rate / (1.0 + drift_pct)
+    series: list[float] = []
+    for i in range(days):
+        t = i / max(1, days - 1)
+        # base drift + light sinusoidal swing + per-day gaussian noise
+        base = start * (1.0 + drift_pct * t)
+        swing = 1.0 + 0.004 * math.sin(2 * math.pi * t * 1.5)  # one-and-a-half mild waves
+        noise = 1.0 + rng.gauss(0.0, noise_pct)
+        series.append(base * swing * noise)
+    series[-1] = today_rate  # anchor the last point to today's quoted rate
+    return [round(v, 4) for v in series]
+
+
+_FX_DAYS = 30
+
+
+def _build_corridors() -> dict[str, Corridor]:
+    return {
+        "Mexico": {
+            "currency": "MXN",
+            "fx_rate": 16.9,
+            "fee_usd": 2.99,
+            "methods": ["cash_pickup", "bank_deposit"],
+            "typical_speed": {"cash_pickup": "minutes", "bank_deposit": "same day"},
+            "fx_history": _generate_fx_history(
+                today_rate=16.9, days=_FX_DAYS, drift_pct=0.012, noise_pct=0.003, seed=11
+            ),
         },
-        "fx_history": [16.75, 16.80, 16.82, 16.88, 16.90],
-    },
-    "Guatemala": {
-        "currency": "GTQ",
-        "fx_rate": 7.78,
-        "fee_usd": 3.49,
-        "methods": ["cash_pickup", "bank_deposit"],
-        "typical_speed": {
-            "cash_pickup": "minutes",
-            "bank_deposit": "same day",
+        "Guatemala": {
+            "currency": "GTQ",
+            "fx_rate": 7.78,
+            "fee_usd": 3.49,
+            "methods": ["cash_pickup", "bank_deposit"],
+            "typical_speed": {"cash_pickup": "minutes", "bank_deposit": "same day"},
+            "fx_history": _generate_fx_history(
+                today_rate=7.78, days=_FX_DAYS, drift_pct=0.005, noise_pct=0.0015, seed=22
+            ),
         },
-        "fx_history": [7.74, 7.76, 7.77, 7.78, 7.78],
-    },
-    "Colombia": {
-        "currency": "COP",
-        "fx_rate": 3900.0,
-        "fee_usd": 4.99,
-        "methods": ["bank_deposit", "mobile_wallet"],
-        "typical_speed": {
-            "bank_deposit": "same day",
-            "mobile_wallet": "minutes",
+        "Colombia": {
+            "currency": "COP",
+            "fx_rate": 3900.0,
+            "fee_usd": 4.99,
+            "methods": ["bank_deposit", "mobile_wallet"],
+            "typical_speed": {"bank_deposit": "same day", "mobile_wallet": "minutes"},
+            "fx_history": _generate_fx_history(
+                today_rate=3900.0, days=_FX_DAYS, drift_pct=0.018, noise_pct=0.004, seed=33
+            ),
         },
-        "fx_history": [3840, 3865, 3880, 3890, 3900],
-    },
-    "El Salvador": {
-        "currency": "USD",
-        "fx_rate": 1.0,
-        "fee_usd": 2.99,
-        "methods": ["bank_deposit", "cash_pickup"],
-        "typical_speed": {
-            "bank_deposit": "same day",
-            "cash_pickup": "minutes",
+        "El Salvador": {
+            "currency": "USD",
+            "fx_rate": 1.0,
+            "fee_usd": 2.99,
+            "methods": ["bank_deposit", "cash_pickup"],
+            "typical_speed": {"bank_deposit": "same day", "cash_pickup": "minutes"},
+            "fx_history": [1.0] * _FX_DAYS,  # USD-pegged corridor: flat
         },
-        "fx_history": [1.0, 1.0, 1.0, 1.0, 1.0],
-    },
-    "Honduras": {
-        "currency": "HNL",
-        "fx_rate": 24.7,
-        "fee_usd": 3.99,
-        "methods": ["cash_pickup", "bank_deposit"],
-        "typical_speed": {
-            "cash_pickup": "minutes",
-            "bank_deposit": "same day",
+        "Honduras": {
+            "currency": "HNL",
+            "fx_rate": 24.7,
+            "fee_usd": 3.99,
+            "methods": ["cash_pickup", "bank_deposit"],
+            "typical_speed": {"cash_pickup": "minutes", "bank_deposit": "same day"},
+            "fx_history": _generate_fx_history(
+                today_rate=24.7, days=_FX_DAYS, drift_pct=0.008, noise_pct=0.002, seed=44
+            ),
         },
-        "fx_history": [24.55, 24.60, 24.65, 24.68, 24.70],
-    },
-}
+    }
+
+
+FELIX_CORRIDORS: dict[str, Corridor] = _build_corridors()
 
 
 COUNTRY_ALIASES: dict[str, str] = {
