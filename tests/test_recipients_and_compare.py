@@ -62,6 +62,8 @@ def test_save_recipient_canonicalizes_country() -> None:
 def test_compare_options_returns_grid() -> None:
     result = tools.compare_options(country="Mexico", amount_usd=200)
     assert result["currency"] == "MXN"
+    assert "price_match_today" in result
+    assert "match_applied" in result["price_match_today"]
     methods = {opt["method"] for opt in result["options"]}
     assert methods == {"cash_pickup", "bank_deposit"}
     for opt in result["options"]:

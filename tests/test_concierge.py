@@ -34,6 +34,9 @@ def test_calculate_payout_uses_fee_and_rate() -> None:
     rate = FELIX_CORRIDORS["Mexico"]["fx_rate"]
     assert result["estimated_received"] == round((200 - fee) * rate, 2)
     assert result["currency"] == "MXN"
+    assert result["match_applied"] is False
+    assert result["fx_rate_base"] == rate
+    assert result["fx_rate_applied"] == result["fx_rate_base"]
 
 
 def test_calculate_payout_rejects_unsupported_method() -> None:

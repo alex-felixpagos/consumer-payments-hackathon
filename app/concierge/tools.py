@@ -11,6 +11,7 @@ from typing import Any
 from app.concierge import fx_chart
 from app.concierge import recipients as recipients_store
 from app.concierge.corridors import FELIX_CORRIDORS, resolve_country
+from app.concierge.pricing import quote_felix_with_match
 
 TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
@@ -38,8 +39,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "calculate_payout",
         "description": (
-            "Compute the estimated amount the recipient will receive in local currency, "
-            "using Felix's current FX rate and corridor fee."
+            "Compute the estimated amount the recipient will receive in local currency. "
+            "Uses Felix's corridor fee; if a competitor quote beats Felix on estimated "
+            "receive, the result automatically matches that better amount (see "
+            "match_applied in the response). Never tell the user you matched unless "
+            "match_applied is true."
         ),
         "input_schema": {
             "type": "object",
@@ -111,7 +115,27 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Return the full advisory grid for a transfer: every available delivery "
             "method × send-now vs wait-2-days. Use this to advise the user on tradeoffs "
-            "instead of computing a single payout."
+            "instead of computing a single payout. Receive amounts include automatic "
+            "competitor price match when applicable (same rule as calculate_payout)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "country": {"type": "string"},
+                "amount_usd": {"type": "number"},
+            },
+            "required": ["country", "amount_usd"],
+        },
+    },
+    {
+        "name": "compare_providers",
+        "description": (
+            "Compare Felix to mocked competitors for this corridor and amount. "
+            "Returns each provider's estimated receive, whether Felix matched a better "
+            "competitor quote (match_applied), and the applied_fx_rate used for Felix "
+            "after match. Only tell the user you matched a competitor rate when "
+            "match_applied is true — in that case calculate_payout and compare_options "
+            "already use the matched receive amount."
         ),
         "input_schema": {
             "type": "object",
@@ -190,16 +214,20 @@ def calculate_payout(country: str, amount_usd: float, method: str) -> dict[str, 
             f"Available: {data['methods']}.",
             "available_methods": data["methods"],
         }
-    received = (amount_usd - data["fee_usd"]) * data["fx_rate"]
+    quote = quote_felix_with_match(canonical, amount_usd)
     return {
         "country": canonical,
         "currency": data["currency"],
         "amount_usd": amount_usd,
         "fee_usd": data["fee_usd"],
-        "fx_rate": data["fx_rate"],
+        "fx_rate_base": quote["felix_base_rate"],
+        "fx_rate_applied": quote["applied_fx_rate"],
         "method": method,
-        "estimated_received": round(received, 2),
+        "estimated_received": quote["felix_receive_after_match"],
         "estimated_speed": data["typical_speed"].get(method, "varies"),
+        "match_applied": quote["match_applied"],
+        "matched_to": quote["matched_to"],
+        "competitors_compared": [c["name"] for c in quote["competitors"]],
     }
 
 
@@ -329,15 +357,20 @@ def compare_options(country: str, amount_usd: float) -> dict[str, Any]:
     fee = data["fee_usd"]
     net = max(0.0, amount_usd - fee)
 
+    q_today = quote_felix_with_match(canonical, amount_usd, corridor_rate=today_rate)
+    q_2d = quote_felix_with_match(canonical, amount_usd, corridor_rate=projected_rate_in_2d)
+    recv_today = q_today["felix_receive_after_match"]
+    recv_2d = q_2d["felix_receive_after_match"]
+
     options = []
     for method in data["methods"]:
         options.append(
             {
                 "method": method,
                 "speed": data["typical_speed"].get(method, "varies"),
-                "send_today": round(net * today_rate, 2),
-                "send_in_2_days": round(net * projected_rate_in_2d, 2),
-                "delta_if_wait": round(net * (projected_rate_in_2d - today_rate), 2),
+                "send_today": recv_today,
+                "send_in_2_days": recv_2d,
+                "delta_if_wait": round(recv_2d - recv_today, 2),
             }
         )
 
@@ -348,8 +381,20 @@ def compare_options(country: str, amount_usd: float) -> dict[str, Any]:
         "fee_usd": fee,
         "today_rate": today_rate,
         "projected_rate_in_2_days": round(projected_rate_in_2d, 4),
+        "price_match_today": {
+            "match_applied": q_today["match_applied"],
+            "matched_to": q_today["matched_to"],
+            "applied_fx_rate": q_today["applied_fx_rate"],
+        },
         "options": options,
     }
+
+
+def compare_providers(country: str, amount_usd: float) -> dict[str, Any]:
+    canonical = resolve_country(country) or country
+    if canonical not in FELIX_CORRIDORS:
+        return {"error": f"Unknown country: {country!r}."}
+    return quote_felix_with_match(canonical, amount_usd)
 
 
 def list_recipients(user_id: str) -> dict[str, Any]:
@@ -386,6 +431,7 @@ TOOL_IMPLEMENTATIONS = {
     "assess_fx_window": assess_fx_window,
     "render_fx_chart": render_fx_chart,
     "compare_options": compare_options,
+    "compare_providers": compare_providers,
     "list_recipients": list_recipients,
     "save_recipient": save_recipient,
 }
