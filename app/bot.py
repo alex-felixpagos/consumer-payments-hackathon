@@ -71,8 +71,8 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         text or f"<{msg.type} — no text extracted>",
     )
 
-    # Public URL of the hero image — update to your Netlify domain after deploy
-    _WELCOME_IMAGE_URL = "https://biovibe.netlify.app/biovibe-hero.png"
+    # Hero image served directly from GitHub raw content (always public, no deploy needed)
+    _WELCOME_IMAGE_URL = "https://raw.githubusercontent.com/alex-felixpagos/consumer-payments-hackathon/feature/cumbia-team/web/biovibe-hero.png"
     _WELCOME_TRIGGER = "hey biovibe, i'm ready to start tracking my health!"
     _PROFILE_SETUP_BTN_ID = "setup_profile"
 
