@@ -323,6 +323,17 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
 
     reply = result.get("reply", "")
     lang = result.get("detected_language", brain.get("lang", "en"))
+
+    # For unrecognized intent, returning users (with history) should get a short
+    # nudge rather than the full new-user onboarding message.
+    if intent == "unrecognized" and len(brain["log_history"]) > 0:
+        _returning_nudge = {
+            "en": "I'm not sure I understood that. You can log a meal, symptom, workout, sleep, or mood — or ask me anything about your health history!",
+            "es": "No estoy seguro de haber entendido eso. Puedes registrar una comida, síntoma, entrenamiento, sueño o estado de ánimo — ¡o preguntarme cualquier cosa sobre tu historial de salud!",
+            "pt": "Não entendi bem isso. Você pode registrar uma refeição, sintoma, treino, sono ou humor — ou me perguntar qualquer coisa sobre seu histórico de saúde!",
+        }
+        reply = _returning_nudge.get(lang, _returning_nudge["en"])
+
     logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, reply)
     await client.send_whatsapp_message(msg.phone_number, reply)
 
