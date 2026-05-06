@@ -19,9 +19,9 @@ PAYMENT_SENT = (
     "Payment confirmed. Your mock receipt is below—no real money moved in this sandbox."
 )
 
-PAYMENT_CANCELLED = (
-    "Okay, we cancelled that payment. Send *pagar* or a Bre-B QR photo whenever you want to try again."
-)
+PROCESSING_PAYMENT = "Processing payment via Bre-B…"
+
+PAYMENT_CANCELLED = "Payment cancelled."
 
 QR_UNREADABLE = (
     "We could not read a Bre-B payload from that image. Try again with the QR in focus, flat, and well lit."

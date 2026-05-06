@@ -4,6 +4,7 @@ Inbound WhatsApp handling: Felix Pay demo flow (mock settle) via Kapso.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from app.config import get_settings
@@ -12,7 +13,6 @@ from app.felix_pay import (
     SessionStore,
     apply_amount_from_quick_reply,
     build_confirmation_preview,
-    process_cancel,
     process_confirm,
     start_session_after_image_stub,
 )
@@ -20,8 +20,11 @@ from app.felix_pay.user_messages import (
     COLD_START_HINT,
     PAYMENT_CANCELLED,
     PAYMENT_SENT,
+    PROCESSING_PAYMENT,
     VENDOR_AMOUNT_PROMPT,
 )
+
+PROCESSING_DELAY_SECONDS = 1.5
 from app.receipts_memory import ReceiptRecord, save_receipt
 from app.schemas.kapso import KapsoMessage
 from app.services.kapso_client import KapsoClient
@@ -169,6 +172,9 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                 _STORE.delete(phone)
                 return
 
+            await client.send_whatsapp_message(phone, PROCESSING_PAYMENT)
+            await asyncio.sleep(PROCESSING_DELAY_SECONDS)
+
             rid = str(result.receipt_id)
             save_receipt(
                 ReceiptRecord(
@@ -189,10 +195,8 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             return
 
         if button_id == "pay_cancel" or text_body.lower() in {"cancel", "no", "stop"}:
-            rolled = process_cancel(session)
-            _STORE.set(phone, rolled)
+            _STORE.delete(phone)
             await client.send_whatsapp_message(phone, PAYMENT_CANCELLED)
-            await _send_amount_prompt(client, phone, rolled.vendor_name)
             return
 
         preview = build_confirmation_preview(session)
