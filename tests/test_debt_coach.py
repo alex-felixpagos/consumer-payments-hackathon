@@ -79,6 +79,35 @@ def test_happy_path_build_reply() -> None:
     assert "simulated envelope" in final.lower()
 
 
+def test_amount_due_split_flow() -> None:
+    phone = "+10000000007"
+    dc.build_reply(phone, "start")
+    after_debt = dc.build_reply(phone, "Credit card")
+    assert "step 1 of 2" in after_debt.lower()
+
+    after_amount = dc.build_reply(phone, "450")
+    assert "step 2 of 2" in after_amount.lower()
+
+    after_due = dc.build_reply(phone, "May 15")
+    assert "step 1 of 3" in after_due.lower() and "income" in after_due.lower()
+
+
+def test_amount_step_invalid_input_reprompts() -> None:
+    phone = "+10000000009"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Card")
+    out = dc.build_reply(phone, "no number here")
+    assert "step 1 of 2" in out.lower()
+
+
+def test_amount_due_combined_shortcut_still_works() -> None:
+    phone = "+10000000010"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    body = dc.build_reply(phone, "$450 due May 15")
+    assert "step 1 of 3" in body.lower() and "income" in body.lower()
+
+
 def test_budget_one_line_shortcut_on_income_step() -> None:
     phone = "+10000000006"
     dc.build_reply(phone, "start")
