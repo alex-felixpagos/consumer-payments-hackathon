@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "consumer-payments-hackathon"
+version = "0.1.0"
+description = "Kapso WhatsApp hackathon starter API"
+readme = "README.md"
+authors = ["Hackathon"]
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+fastapi = ">=0.115.0"
+uvicorn = { version = ">=0.32.0", extras = ["standard"] }
+httpx = ">=0.27.0"
+pydantic-settings = ">=2.6.0"
+pytest = ">=8.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
