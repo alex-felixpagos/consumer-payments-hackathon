@@ -49,6 +49,7 @@ async def receive_webhook(request: Request) -> dict[str, str]:
     """Inbound Kapso events (typically one message per request)."""
     settings = get_settings()
     raw = await request.body()
+    logger.info("Kapso webhook POST: %s bytes", len(raw))
 
     if settings.kapso_webhook_secret:
         signature = (
@@ -61,6 +62,10 @@ async def receive_webhook(request: Request) -> dict[str, str]:
             if settings.environment == "production":
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing signature")
         elif not _verify_signature(raw, signature, settings.kapso_webhook_secret):
+            logger.warning(
+                "Webhook signature invalid — Kapso POST rejected. If testing locally, "
+                "ensure KAPSO_WEBHOOK_SECRET matches the signing secret in Kapso or leave it empty in .env."
+            )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 
     try:
@@ -70,7 +75,15 @@ async def receive_webhook(request: Request) -> dict[str, str]:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid payload") from e
 
     msg = webhook.message
+    logger.info(
+        "Parsed webhook message id=%s type=%s direction=%s from=%s",
+        msg.id,
+        msg.type,
+        msg.direction,
+        msg.phone_number,
+    )
     if msg.direction != "inbound":
+        logger.info("Skipping non-inbound message (direction=%r)", msg.direction)
         return {"status": "ignored"}
 
     try:
@@ -81,8 +94,12 @@ async def receive_webhook(request: Request) -> dict[str, str]:
 
     try:
         await handle_inbound(msg, client)
+        logger.info("handle_inbound finished for message id=%s", msg.id)
     except Exception:
-        logger.exception("handle_inbound failed")
+        logger.exception(
+            "handle_inbound failed — check Uvicorn logs for Kapso HTTP errors "
+            "(401/403 API key, wrong KAPSO_PHONE_NUMBER_ID, 24h messaging window, sandbox recipient)."
+        )
         # Still acknowledge to avoid provider retry storms; log and optionally notify.
     return {"status": "received"}
 
