@@ -262,13 +262,37 @@ def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
     }
 
 
-def test_menu_command_returns_interactive_list() -> None:
+def test_menu_command_returns_interactive_list_idle_state() -> None:
+    """With no goal yet, menu only shows start, set-goal, demo-shortfall."""
     phone = "+10000000009"
     out = dc.build_outbound(phone, "menu")
     assert out.has_list
-    assert out.list_button == "See commands"
+    assert out.list_button == "See options"
     assert len(out.list_sections) == 1
     rows = out.list_sections[0]["rows"]
-    assert len(rows) >= 8
-    assert any(r["id"] == "m_budget" for r in rows)
-    assert all("description" in r and r["description"] for r in rows)
+    ids = {r["id"] for r in rows}
+    assert ids == {"m_start", "m_goal", "m_demo_shortfall"}
+    assert all("description" not in r for r in rows)
+    assert all(r["title"][0] in {"🚀", "🎯", "🧪"} for r in rows)
+    assert "m_hello" not in ids and "m_menu" not in ids
+
+
+def test_menu_expands_after_goal_is_set() -> None:
+    """After a payment goal exists, menu offers budget, envelope, reminder, help."""
+    phone = "+10000000019"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+
+    out = dc.build_outbound(phone, "menu")
+    rows = out.list_sections[0]["rows"]
+    ids = {r["id"] for r in rows}
+    assert {
+        "m_start",
+        "m_budget",
+        "m_envelope",
+        "m_reminder",
+        "m_help_principal",
+        "m_demo_shortfall",
+    }.issubset(ids)
+    assert "m_goal" not in ids  # goal already complete

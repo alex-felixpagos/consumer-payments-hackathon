@@ -269,74 +269,51 @@ def _needs_setup(session: UserSession) -> bool:
     return session.payment_amount is None or session.due_date is None
 
 
-def _menu_list_sections() -> tuple[dict[str, Any], ...]:
-    """WhatsApp list rows (title ≤24, description ≤72 chars each)."""
-    rows = (
-        {
-            "id": "m_start",
-            "title": "start",
-            "description": "Begin or restart the guided plan",
-        },
-        {
-            "id": "m_hello",
-            "title": "hello",
-            "description": "Same warm welcome as start",
-        },
-        {
-            "id": "m_menu",
-            "title": "menu",
-            "description": "Open this command list again",
-        },
-        {
-            "id": "m_goal",
-            "title": "goal",
-            "description": "Set amount & due date (after debt name)",
-        },
-        {
-            "id": "m_budget",
-            "title": "budget",
-            "description": "Income, essentials, flexible spending",
-        },
-        {
-            "id": "m_envelope",
-            "title": "envelope",
-            "description": "Set-aside amount + illustrative yield",
-        },
-        {
-            "id": "m_reminder",
-            "title": "reminder",
-            "description": "Day-before payment nudge",
-        },
-        {
-            "id": "m_im_short",
-            "title": "I'm short",
-            "description": "Show shortfall ideas for the demo",
-        },
-        {
-            "id": "m_help_principal",
-            "title": "help principal",
-            "description": "Shortfall ideas (general, not advice)",
-        },
-        {
-            "id": "m_demo_shortfall",
-            "title": "demo shortfall",
-            "description": "Pitch: force $330 vs $450 gap demo",
-        },
+def _has_goal(session: UserSession) -> bool:
+    return session.payment_amount is not None and session.due_date is not None
+
+
+def _has_budget(session: UserSession) -> bool:
+    return (
+        session.income is not None
+        and session.essentials is not None
+        and session.flexible is not None
     )
-    return ({"title": "Debt coach commands", "rows": rows},)
+
+
+def _menu_list_sections(session: UserSession) -> tuple[dict[str, Any], ...]:
+    """WhatsApp list rows, filtered by session progress.
+
+    Titles carry an emoji + plain words (no descriptions) so the row is
+    self-explanatory and the chat echo stays clean.
+    """
+    rows: list[dict[str, str]] = []
+
+    rows.append({"id": "m_start", "title": "🚀 Start over"})
+
+    if not _has_goal(session):
+        rows.append({"id": "m_goal", "title": "🎯 Set payment goal"})
+
+    if _has_goal(session):
+        rows.append({"id": "m_budget", "title": "💰 Set budget"})
+        rows.append({"id": "m_envelope", "title": "📦 Envelope"})
+        rows.append({"id": "m_reminder", "title": "🔔 Reminder"})
+        rows.append({"id": "m_help_principal", "title": "🆘 Help with payment"})
+
+    rows.append({"id": "m_demo_shortfall", "title": "🧪 Demo shortfall"})
+
+    return ({"title": "What's next?", "rows": tuple(rows)},)
 
 
 def _welcome_outbound(session: UserSession) -> CoachOutbound:
     session.reset()
     session.step = CoachStep.WAITING_DEBT_NAME
     body = (
-        "Hey — glad you're here. 💛\n\n"
-        "Money stress is *so* common, and you don't have to sort it out alone in your head. "
-        "I'm a tiny coach inside WhatsApp: we'll pick *one payment* you're aiming for, "
-        "do a *quick budget* check, and (only if you want) a simple *payment envelope* "
-        "view plus gentle reminders — *nothing here moves real money*, just clarity.\n\n"
-        "Whenever you're ready, tell me *which debt* we're planning for "
-        "(e.g. credit card, car loan). You can type it, or tap *Start* below for a nudge."
+        "Hey 👋 — glad you're here.\n\n"
+        "I'm a tiny coach for one debt payment.\n"
+        "We pick a goal, do a quick budget, and (optional) set a reminder.\n\n"
+        "No real money moves — just clarity. 💛\n\n"
+        "Tell me which debt we're planning for (e.g. credit card, car loan), or tap *Start*."
     )
     return CoachOutbound(
         text=body,
@@ -349,12 +326,12 @@ def _welcome_outbound(session: UserSession) -> CoachOutbound:
     )
 
 
-def _cmd_menu(_session: UserSession) -> CoachOutbound:
+def _cmd_menu(session: UserSession) -> CoachOutbound:
     return CoachOutbound(
-        text="Tap *See commands* below, then pick a row. Each row runs one command.",
-        list_button="See commands",
-        list_sections=_menu_list_sections(),
-        footer="Or type a command name (e.g. start, budget).",
+        text="Pick what you'd like to do next.",
+        list_button="See options",
+        list_sections=_menu_list_sections(session),
+        footer="Or type a command (e.g. start, budget).",
     )
 
 
@@ -385,7 +362,7 @@ def _prompt_due_date() -> str:
 
 def _prompt_budget_income() -> str:
     return (
-        "What’s your *monthly income* (take-home)? "
+        "What's your *monthly income* (take-home)? "
         "Reply with one number (e.g. *3000* or *$3,000*)."
     )
 
@@ -410,7 +387,7 @@ def _begin_budget_flow(session: UserSession) -> str:
     session.flexible = None
     session.step = CoachStep.WAITING_BUDGET_INCOME
     return (
-        "Let’s check your budget — one number per message.\n\n"
+        "Let's do your budget — one number at a time.\n\n"
         f"{_prompt_budget_income()}"
     )
 
