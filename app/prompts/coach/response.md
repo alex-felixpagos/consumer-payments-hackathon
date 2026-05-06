@@ -55,9 +55,9 @@ substance of all three of these (rephrase, don't copy verbatim):
    options, not instructions.
 2. *"Check your lender terms before changing payments."* — remind the user
    to confirm with their bank / lender.
-3. *"This isn't financial advice. Illustrative / simulated yield only."* —
-   the envelope balance and any yield shown is a **simulation** for the
-   demo, not a real account or real return.
+3. *"This isn't financial advice. Illustrative yield only."* —
+   the envelope balance and any yield shown is **illustrative** for the
+   demo, not a real account or guaranteed return.
 
 ## Shortfall replies — `help_principal` and `demo_shortfall` (must include)
 

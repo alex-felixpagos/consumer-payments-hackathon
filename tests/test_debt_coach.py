@@ -26,9 +26,16 @@ def test_build_outbound_resolved_command_used_when_parse_fails() -> None:
     dc.build_reply(phone, "Card")
     dc.build_reply(phone, "$450 due May 15")
     dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
-    # "show my savings" is not a literal command; simulates LLM resolving to envelope.
+    # "show my savings" is not a literal command; stands in for LLM resolving to envelope.
     out = dc.build_outbound(phone, "show my savings", resolved_command="envelope")
-    assert "simulated payment envelope" in out.text.lower()
+    assert "payment envelope" in out.text.lower()
+    assert "set aside" in out.text.lower()
+
+
+def test_parse_command_help_principal_suggestion_buttons() -> None:
+    assert dc.parse_command("hp_reduce_flex") == "hp_reduce_flex"
+    assert dc.parse_command("hp_lender_terms") == "hp_lender_terms"
+    assert dc.parse_command("hp_minimum_pay") == "hp_minimum_pay"
 
 
 def test_parse_command_exact() -> None:
@@ -75,25 +82,25 @@ def test_happy_path_build_reply() -> None:
     assert "debt" in welcome and ("glad" in welcome or "here" in welcome)
     assert dc.build_reply(phone, "Credit card").startswith("Thanks")
     body = dc.build_reply(phone, "$450 due May 15")
-    assert "step 1" in body.lower() and "income" in body.lower()
-    assert "step 2" in dc.build_reply(phone, "3000").lower()
-    assert "step 3" in dc.build_reply(phone, "1800").lower()
+    assert "monthly income" in body.lower()
+    assert "essentials" in dc.build_reply(phone, "3000").lower()
+    assert "flexible spending" in dc.build_reply(phone, "1800").lower()
     final = dc.build_reply(phone, "500")
     assert "payment plan is ready" in final.lower()
-    assert "simulated envelope" in final.lower()
+    assert "set aside for this payment" in final.lower()
 
 
 def test_amount_due_split_flow() -> None:
     phone = "+10000000007"
     dc.build_reply(phone, "start")
     after_debt = dc.build_reply(phone, "Credit card")
-    assert "step 1 of 2" in after_debt.lower()
+    assert "how much do you need to pay" in after_debt.lower()
 
     after_amount = dc.build_reply(phone, "450")
-    assert "step 2 of 2" in after_amount.lower()
+    assert "when is it due" in after_amount.lower()
 
     after_due = dc.build_reply(phone, "May 15")
-    assert "step 1 of 3" in after_due.lower() and "income" in after_due.lower()
+    assert "monthly income" in after_due.lower()
 
 
 def test_amount_step_invalid_input_reprompts() -> None:
@@ -101,7 +108,7 @@ def test_amount_step_invalid_input_reprompts() -> None:
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Card")
     out = dc.build_reply(phone, "no number here")
-    assert "step 1 of 2" in out.lower()
+    assert "how much do you need to pay" in out.lower()
 
 
 def test_amount_due_combined_shortcut_still_works() -> None:
@@ -109,7 +116,7 @@ def test_amount_due_combined_shortcut_still_works() -> None:
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
     body = dc.build_reply(phone, "$450 due May 15")
-    assert "step 1 of 3" in body.lower() and "income" in body.lower()
+    assert "monthly income" in body.lower()
 
 
 def test_budget_one_line_shortcut_on_income_step() -> None:
@@ -121,7 +128,7 @@ def test_budget_one_line_shortcut_on_income_step() -> None:
     assert "payment plan is ready" in final.lower()
 
 
-def test_budget_summary_response_has_next_step_buttons() -> None:
+def test_budget_summary_response_has_action_buttons() -> None:
     phone = "+10000000004"
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
@@ -143,7 +150,7 @@ def test_show_reminder_button_title_routes_to_reminder() -> None:
     assert dc.parse_command("Show reminder") == "reminder"
 
 
-def test_reminder_mentions_im_short_next_step() -> None:
+def test_reminder_mentions_im_short() -> None:
     phone = "+10000000011"
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
@@ -188,10 +195,13 @@ def test_help_principal_demo_shortfall() -> None:
     dc.build_reply(phone, "1800")
     dc.build_reply(phone, "500")
     dc.build_reply(phone, "demo shortfall")
-    out = dc.build_reply(phone, "help principal")
+    response = dc.build_response(phone, "help principal")
+    out = response.body
     assert "120" in out
-    assert "general options" in out.lower()
+    assert "three general directions" in out.lower()
     assert "lender terms" in out.lower()
+    ids = {b.id for b in response.buttons}
+    assert ids == {"hp_reduce_flex", "hp_lender_terms", "hp_minimum_pay"}
 
 
 def test_im_short_uses_demo_shortfall_when_happy_path_has_no_gap() -> None:
@@ -203,10 +213,32 @@ def test_im_short_uses_demo_shortfall_when_happy_path_has_no_gap() -> None:
     dc.build_reply(phone, "1800")
     dc.build_reply(phone, "500")
 
-    out = dc.build_reply(phone, "I'm short")
+    response = dc.build_response(phone, "I'm short")
 
-    assert "120" in out
-    assert "general options" in out.lower()
+    assert "120" in response.body
+    assert "three general directions" in response.body.lower()
+    assert {b.id for b in response.buttons} == {
+        "hp_reduce_flex",
+        "hp_lender_terms",
+        "hp_minimum_pay",
+    }
+
+
+def test_help_principal_reduce_flexible_reopens_flexible_step() -> None:
+    phone = "+10000000013"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+    dc.build_reply(phone, "3000")
+    dc.build_reply(phone, "1800")
+    dc.build_reply(phone, "500")
+    dc.build_reply(phone, "demo shortfall")
+    dc.build_response(phone, "help principal")
+    flex_prompt = dc.build_reply(phone, "hp_reduce_flex")
+    assert "flexible spending" in flex_prompt.lower()
+    assert dc.get_session(phone).step == dc.CoachStep.WAITING_BUDGET_FLEXIBLE
+    summary = dc.build_reply(phone, "350")
+    assert "payment plan is ready" in summary.lower()
 
 
 def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
@@ -219,10 +251,15 @@ def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
     dc.build_reply(phone, "500")
     dc.build_reply(phone, "demo shortfall")
 
-    out = dc.build_reply(phone, "I can't cover principal")
+    response = dc.build_response(phone, "I can't cover principal")
 
-    assert "120" in out
-    assert "general options" in out.lower()
+    assert "120" in response.body
+    assert "three general directions" in response.body.lower()
+    assert {b.id for b in response.buttons} == {
+        "hp_reduce_flex",
+        "hp_lender_terms",
+        "hp_minimum_pay",
+    }
 
 
 def test_menu_command_returns_interactive_list() -> None:

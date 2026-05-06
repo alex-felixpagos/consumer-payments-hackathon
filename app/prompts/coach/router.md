@@ -18,8 +18,8 @@ no punctuation, no quotes, no explanation, no leading/trailing whitespace.
   (the monthly money-in / money-out breakdown).
   Examples: "budget", "my income is 3000", "income 3000 essentials 1800 flexible 500",
   "update my budget", "I spend about 1800 on rent and food".
-- `envelope` — user wants to see or create the simulated payment envelope
-  (the set-aside money for the upcoming payment, including the simulated yield).
+- `envelope` — user wants to see or create the payment envelope
+  (the set-aside money for the upcoming payment, including illustrative yield).
   Examples: "envelope", "show my envelope", "create envelope", "how much have I saved?",
   "what's in my envelope?".
 - `reminder` — user wants a payment reminder, or to talk about due-date alerts.

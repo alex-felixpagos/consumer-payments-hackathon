@@ -117,6 +117,10 @@ def clear_all_sessions_for_tests() -> None:
 _CMD_HELP_PRINCIPAL: Final = "help principal"
 _CMD_DEMO_SHORTFALL: Final = "demo shortfall"
 _CMD_IM_SHORT: Final = "im short"
+# Reply buttons on help-principal shortfall message (ids sent by WhatsApp on tap).
+_HP_REDUCE_FLEX: Final = "hp_reduce_flex"
+_HP_LENDER_TERMS: Final = "hp_lender_terms"
+_HP_MINIMUM_PAY: Final = "hp_minimum_pay"
 # List row ids from ``menu`` interactive list → same names as ``parse_command`` returns.
 _MENU_LIST_ROW_TO_CMD: Final[dict[str, str]] = {
     "m_start": "start",
@@ -154,6 +158,8 @@ def parse_command(text: str) -> str | None:
         return None
     if t in _MENU_LIST_ROW_TO_CMD:
         return _MENU_LIST_ROW_TO_CMD[t]
+    if t in (_HP_REDUCE_FLEX, _HP_LENDER_TERMS, _HP_MINIMUM_PAY):
+        return t
     if t == _CMD_HELP_PRINCIPAL or t.startswith(_CMD_HELP_PRINCIPAL + " "):
         return _CMD_HELP_PRINCIPAL
     if t == _CMD_IM_SHORT or t.startswith(_CMD_IM_SHORT + " "):
@@ -289,17 +295,17 @@ def _menu_list_sections() -> tuple[dict[str, Any], ...]:
         {
             "id": "m_budget",
             "title": "budget",
-            "description": "Income + essentials + flexible (3 steps)",
+            "description": "Income, essentials, flexible spending",
         },
         {
             "id": "m_envelope",
             "title": "envelope",
-            "description": "Simulated savings + illustrative yield",
+            "description": "Set-aside amount + illustrative yield",
         },
         {
             "id": "m_reminder",
             "title": "reminder",
-            "description": "Simulated day-before payment nudge",
+            "description": "Day-before payment nudge",
         },
         {
             "id": "m_im_short",
@@ -327,8 +333,8 @@ def _welcome_outbound(session: UserSession) -> CoachOutbound:
         "Hey — glad you're here. 💛\n\n"
         "Money stress is *so* common, and you don't have to sort it out alone in your head. "
         "I'm a tiny coach inside WhatsApp: we'll pick *one payment* you're aiming for, "
-        "do a *quick budget* check, and (only if you want) peek at a *simulated* "
-        "“envelope” and gentle reminders — *no real money moves here*, just clarity.\n\n"
+        "do a *quick budget* check, and (only if you want) a simple *payment envelope* "
+        "view plus gentle reminders — *nothing here moves real money*, just clarity.\n\n"
         "Whenever you're ready, tell me *which debt* we're planning for "
         "(e.g. credit card, car loan). You can type it, or tap *Start* below for a nudge."
     )
@@ -339,7 +345,7 @@ def _welcome_outbound(session: UserSession) -> CoachOutbound:
             {"id": "menu", "title": "Menu"},
         ),
         header="Hi there 👋",
-        footer="Simulated demo — not financial advice.",
+        footer="Demo — not financial advice.",
     )
 
 
@@ -365,35 +371,35 @@ def _cmd_goal(session: UserSession) -> str:
 
 def _prompt_amount() -> str:
     return (
-        "*Step 1 of 2:* How much do you need to pay? "
+        "How much do you need to pay? "
         "Reply with one number (e.g. *450* or *$450*)."
     )
 
 
 def _prompt_due_date() -> str:
     return (
-        "*Step 2 of 2:* When is it due? "
+        "When is it due? "
         "Reply with a date (e.g. *May 15* or *the 15th*)."
     )
 
 
 def _prompt_budget_income() -> str:
     return (
-        "*Step 1 of 3:* What’s your *monthly income* (take-home)? "
+        "What’s your *monthly income* (take-home)? "
         "Reply with one number (e.g. *3000* or *$3,000*)."
     )
 
 
 def _prompt_budget_essentials() -> str:
     return (
-        "*Step 2 of 3:* How much goes to *essentials* each month? "
+        "How much goes to *essentials* each month? "
         "(Rent, utilities, groceries, transport — one total number.)"
     )
 
 
 def _prompt_budget_flexible() -> str:
     return (
-        "*Step 3 of 3:* How much is *flexible spending*? "
+        "How much is *flexible spending*? "
         "(Dining out, subscriptions, fun — rough total is fine.)"
     )
 
@@ -404,7 +410,7 @@ def _begin_budget_flow(session: UserSession) -> str:
     session.flexible = None
     session.step = CoachStep.WAITING_BUDGET_INCOME
     return (
-        "Let’s do your budget in *three easy messages* — one number at a time.\n\n"
+        "Let’s check your budget — one number per message.\n\n"
         f"{_prompt_budget_income()}"
     )
 
@@ -441,11 +447,10 @@ def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
             f"Flexible spending: ${flexible:,.2f}\n"
             f"Available for payment: ${avail:,.2f}\n\n"
             f"{fit_line}\n\n"
-            "Simulated envelope:\n"
-            f"${goal:,.2f} set aside for this payment.\n"
-            f"Estimated illustrative yield this month: ~${illustrative:,.2f}.\n"
-            "This is simulated only, not a real account or guaranteed return.\n\n"
-            "Tap a button for the next step."
+            "Set aside for this payment:\n"
+            f"${goal:,.2f} toward your goal.\n"
+            f"Illustrative yield this month: ~${illustrative:,.2f} (not guaranteed).\n\n"
+            "Tap a button below, or say *reminder* or *I'm short*."
         ),
         buttons=(
             ReplyButton(id="reminder", title="Show reminder"),
@@ -468,8 +473,8 @@ def _cmd_envelope(session: UserSession) -> str:
     # Illustrative only (PRD demo assumptions).
     illustrative = round(amt * 0.001, 2)
     return (
-        f"Simulated payment envelope for {label}: *${amt:,.2f}* set aside (not a real account).\n"
-        f"Illustrative simulated yield this month: ~${illustrative:,.2f} (not guaranteed)."
+        f"Payment envelope for {label}: *${amt:,.2f}* set aside toward this goal.\n"
+        f"Illustrative yield this month: ~${illustrative:,.2f} (not guaranteed)."
     )
 
 
@@ -479,13 +484,13 @@ def _cmd_reminder(session: UserSession) -> str:
     label = session.debt_label or "your payment"
     amt = session.payment_amount
     return (
-        f"Reminder (simulated): your {label} payment is due tomorrow ({session.due_date}). "
-        f"Move *${amt:,.2f}* from your simulated envelope to your bank today so you’re ready to pay.\n\n"
+        f"Reminder: your {label} payment is due tomorrow ({session.due_date}). "
+        f"Have *${amt:,.2f}* ready at your bank so you’re set to pay.\n\n"
         "If covering principal is stressful, tap/try *I'm short*."
     )
 
 
-def _cmd_help_principal(session: UserSession) -> str:
+def _cmd_help_principal(session: UserSession) -> str | CoachReply:
     goal = session.payment_amount
     if goal is None:
         return "Set a payment goal first (start flow)."
@@ -500,14 +505,48 @@ def _cmd_help_principal(session: UserSession) -> str:
             f"{_CMD_DEMO_SHORTFALL} for the pitch scenario."
         )
     flex_half = round(max(session.flexible or 0, 0) / 2, 2) if session.flexible else 60.0
+    return CoachReply(
+        body=(
+            f"Your payment goal is *${goal:,.2f}*, but your budget leaves *${avail:,.2f}* available. "
+            f"You're short *${gap:,.2f}*.\n\n"
+            "Here are *three general directions* — tap one for more, or read the note below.\n\n"
+            f"If you trim flexible spending, something on the order of ~${flex_half:,.2f} "
+            "might be a starting point to think about — only if that feels realistic.\n\n"
+            "*Check your lender terms before changing payments.* This isn’t financial advice."
+        ),
+        buttons=(
+            ReplyButton(id=_HP_REDUCE_FLEX, title="Reduce flexible"),
+            ReplyButton(id=_HP_LENDER_TERMS, title="Lender terms"),
+            ReplyButton(id=_HP_MINIMUM_PAY, title="Minimum first"),
+        ),
+    )
+
+
+def _cmd_hp_reduce_flex(session: UserSession) -> str:
+    if session.income is None or session.essentials is None:
+        return "Run *budget* first so we have your numbers, then try help principal again."
+    session.available_for_payment_override = None
+    session.step = CoachStep.WAITING_BUDGET_FLEXIBLE
     return (
-        f"Your payment goal is *${goal:,.2f}*, but your budget leaves *${avail:,.2f}* available. "
-        f"You're short *${gap:,.2f}*.\n\n"
-        "Here are *three general options to consider*:\n"
-        f"1) Reduce flexible spending (e.g. by ~${flex_half:,.2f}) if that’s realistic for you.\n"
-        "2) See whether splitting extra principal is allowed under *your lender terms*.\n"
-        "3) Prioritize the *minimum payment* to reduce late-fee risk if you’re unsure.\n\n"
-        "*Check your lender terms before changing payments.* This isn’t financial advice."
+        "Let’s revisit *flexible spending* — send one new number and we’ll refresh your plan.\n\n"
+        f"{_prompt_budget_flexible()}"
+    )
+
+
+def _cmd_hp_lender_terms(_session: UserSession) -> str:
+    return (
+        "Splitting or skipping extra *principal* isn’t always allowed — it depends on your "
+        "account type and lender rules. Check your *terms* or contact the lender before "
+        "you assume you can change how much principal you pay.\n\n"
+        "This isn’t financial advice."
+    )
+
+
+def _cmd_hp_minimum_pay(_session: UserSession) -> str:
+    return (
+        "If you’re unsure you can cover the full amount, paying at least the *minimum payment* "
+        "on time often reduces late fees and credit-report noise (details vary by lender).\n\n"
+        "Confirm what “minimum” means on *your* statement. This isn’t financial advice."
     )
 
 
@@ -519,7 +558,7 @@ def _cmd_demo_shortfall(session: UserSession) -> str:
     )
 
 
-def _cmd_im_short(session: UserSession) -> str:
+def _cmd_im_short(session: UserSession) -> str | CoachReply:
     goal = session.payment_amount
     if goal is None:
         return "Set a payment goal first (start flow)."
@@ -547,6 +586,12 @@ def _route_command(cmd: str, session: UserSession) -> str | CoachReply | CoachOu
         return _cmd_envelope(session)
     if cmd == "reminder":
         return _cmd_reminder(session)
+    if cmd == _HP_REDUCE_FLEX:
+        return _cmd_hp_reduce_flex(session)
+    if cmd == _HP_LENDER_TERMS:
+        return _cmd_hp_lender_terms(session)
+    if cmd == _HP_MINIMUM_PAY:
+        return _cmd_hp_minimum_pay(session)
     if cmd == _CMD_HELP_PRINCIPAL:
         return _cmd_help_principal(session)
     if cmd == _CMD_IM_SHORT:
