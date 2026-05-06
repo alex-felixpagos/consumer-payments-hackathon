@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Final
+from typing import Any, Final
 
 # Keyed by Kapso/WA ``from`` number (string).
 _sessions: dict[str, "UserSession"] = {}
@@ -21,16 +21,24 @@ _BTN_BEGIN_ID: Final = "begin"
 
 @dataclass(frozen=True)
 class CoachOutbound:
-    """Plain text or interactive (WhatsApp reply buttons; max 3)."""
+    """Plain text, reply buttons (max 3), or WhatsApp *list* (rows with descriptions)."""
 
     text: str
     buttons: tuple[dict[str, str], ...] = ()
     header: str | None = None
     footer: str | None = None
+    #: Opens the list (WhatsApp label, max 20 chars).
+    list_button: str | None = None
+    #: One section dict per Meta API: ``{"title": str, "rows": tuple[dict, ...]}`` — each row ``id``, ``title``, ``description``.
+    list_sections: tuple[dict[str, Any], ...] = ()
 
     @property
     def has_buttons(self) -> bool:
         return bool(self.buttons)
+
+    @property
+    def has_list(self) -> bool:
+        return bool(self.list_sections)
 
 
 class CoachStep(str, Enum):
@@ -91,6 +99,8 @@ class ReplyButton:
 class CoachReply:
     body: str
     buttons: tuple[ReplyButton, ...] = field(default_factory=tuple)
+    list_button: str | None = None
+    list_sections: tuple[dict[str, Any], ...] = ()
 
 
 def get_session(phone: str) -> UserSession:
@@ -106,6 +116,18 @@ def clear_all_sessions_for_tests() -> None:
 
 _CMD_HELP_PRINCIPAL: Final = "help principal"
 _CMD_DEMO_SHORTFALL: Final = "demo shortfall"
+# List row ids from ``menu`` interactive list → same names as ``parse_command`` returns.
+_MENU_LIST_ROW_TO_CMD: Final[dict[str, str]] = {
+    "m_start": "start",
+    "m_hello": "hello",
+    "m_menu": "menu",
+    "m_goal": "goal",
+    "m_budget": "budget",
+    "m_envelope": "envelope",
+    "m_reminder": "reminder",
+    "m_help_principal": _CMD_HELP_PRINCIPAL,
+    "m_demo_shortfall": _CMD_DEMO_SHORTFALL,
+}
 _SHORTFALL_PHRASES: Final = (
     "can't cover principal",
     "cant cover principal",
@@ -123,6 +145,8 @@ def parse_command(text: str) -> str | None:
     t = text.strip().lower()
     if not t:
         return None
+    if t in _MENU_LIST_ROW_TO_CMD:
+        return _MENU_LIST_ROW_TO_CMD[t]
     if t == _CMD_HELP_PRINCIPAL or t.startswith(_CMD_HELP_PRINCIPAL + " "):
         return _CMD_HELP_PRINCIPAL
     if any(phrase in t for phrase in _SHORTFALL_PHRASES):
@@ -226,19 +250,56 @@ def _needs_setup(session: UserSession) -> bool:
     return session.payment_amount is None or session.due_date is None
 
 
-def _menu_text() -> str:
-    return (
-        "Commands:\n"
-        "• start — begin / reset\n"
-        "• hello — same warm welcome as start\n"
-        "• menu — this list\n"
-        "• goal — jump to amount & due date (after debt name)\n"
-        "• budget — (re)enter income in 3 short steps\n"
-        "• envelope — simulated envelope + illustrative yield\n"
-        "• reminder — simulated day-before nudge\n"
-        f"• {_CMD_HELP_PRINCIPAL} — shortfall ideas (general, not advice)\n"
-        f"• {_CMD_DEMO_SHORTFALL} — demo gap ($330 vs $450 goal)"
+def _menu_list_sections() -> tuple[dict[str, Any], ...]:
+    """WhatsApp list rows (title ≤24, description ≤72 chars each)."""
+    rows = (
+        {
+            "id": "m_start",
+            "title": "start",
+            "description": "Begin or restart the guided plan",
+        },
+        {
+            "id": "m_hello",
+            "title": "hello",
+            "description": "Same warm welcome as start",
+        },
+        {
+            "id": "m_menu",
+            "title": "menu",
+            "description": "Open this command list again",
+        },
+        {
+            "id": "m_goal",
+            "title": "goal",
+            "description": "Set amount & due date (after debt name)",
+        },
+        {
+            "id": "m_budget",
+            "title": "budget",
+            "description": "Income + essentials + flexible (3 steps)",
+        },
+        {
+            "id": "m_envelope",
+            "title": "envelope",
+            "description": "Simulated savings + illustrative yield",
+        },
+        {
+            "id": "m_reminder",
+            "title": "reminder",
+            "description": "Simulated day-before payment nudge",
+        },
+        {
+            "id": "m_help_principal",
+            "title": "help principal",
+            "description": "Shortfall ideas (general, not advice)",
+        },
+        {
+            "id": "m_demo_shortfall",
+            "title": "demo shortfall",
+            "description": "Pitch: force $330 vs $450 gap demo",
+        },
     )
+    return ({"title": "Debt coach commands", "rows": rows},)
 
 
 def _welcome_outbound(session: UserSession) -> CoachOutbound:
@@ -264,8 +325,13 @@ def _welcome_outbound(session: UserSession) -> CoachOutbound:
     )
 
 
-def _cmd_menu(_session: UserSession) -> str:
-    return _menu_text()
+def _cmd_menu(_session: UserSession) -> CoachOutbound:
+    return CoachOutbound(
+        text="Tap *See commands* below, then pick a row. Each row runs one command.",
+        list_button="See commands",
+        list_sections=_menu_list_sections(),
+        footer="Or type a command name (e.g. start, budget).",
+    )
 
 
 def _cmd_goal(session: UserSession) -> str:
@@ -452,7 +518,7 @@ def _route_command(cmd: str, session: UserSession) -> str | CoachReply | CoachOu
         return _cmd_help_principal(session)
     if cmd == _CMD_DEMO_SHORTFALL:
         return _cmd_demo_shortfall(session)
-    return _menu_text()
+    return _cmd_menu(session)
 
 
 def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
@@ -571,6 +637,8 @@ def _to_outbound(routed: str | CoachReply | CoachOutbound) -> CoachOutbound:
         return CoachOutbound(
             text=routed.body,
             buttons=tuple({"id": button.id, "title": button.title} for button in routed.buttons),
+            list_button=routed.list_button,
+            list_sections=routed.list_sections,
         )
     return CoachOutbound(text=routed)
 
@@ -582,6 +650,8 @@ def _to_reply(routed: str | CoachReply | CoachOutbound) -> CoachReply:
         return CoachReply(
             body=routed.text,
             buttons=tuple(ReplyButton(id=button["id"], title=button["title"]) for button in routed.buttons),
+            list_button=routed.list_button,
+            list_sections=routed.list_sections,
         )
     return CoachReply(body=routed)
 

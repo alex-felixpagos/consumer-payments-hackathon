@@ -126,6 +126,40 @@ class KapsoClient:
             payload["interactive"]["footer"] = {"text": footer}
         return await self._post_messages(payload, f"interactive buttons to {to}")
 
+    async def send_interactive_list(
+        self,
+        to: str,
+        body_text: str,
+        list_button_text: str,
+        sections: list[dict[str, Any]],
+        header: str | None = None,
+        footer: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        WhatsApp interactive *list* message — rows can include ``description`` (see Meta docs).
+
+        ``list_button_text``: label on the chip that opens the list (1–20 characters).
+        ``sections``: each item ``{"title": str, "rows": [{"id", "title", "description?"}, ...]}``.
+        """
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": self._normalize_to(to),
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {"text": body_text},
+                "action": {
+                    "button": list_button_text,
+                    "sections": sections,
+                },
+            },
+        }
+        if header:
+            payload["interactive"]["header"] = {"type": "text", "text": header}
+        if footer:
+            payload["interactive"]["footer"] = {"text": footer}
+        return await self._post_messages(payload, f"interactive list to {to}")
+
     async def send_cta_url_button(
         self,
         to: str,

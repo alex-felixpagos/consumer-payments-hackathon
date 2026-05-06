@@ -21,6 +21,16 @@ from app.services.kapso_client import KapsoClient
 logger = logging.getLogger(__name__)
 
 
+def _list_sections_for_api(sections: tuple[dict, ...]) -> list[dict]:
+    """Convert frozen tuples in section rows to JSON-serializable lists for Kapso."""
+    api_sections: list[dict] = []
+    for sec in sections:
+        rows = sec["rows"]
+        row_list = [dict(r) for r in rows] if isinstance(rows, tuple) else list(rows)
+        api_sections.append({"title": sec["title"], "rows": row_list})
+    return api_sections
+
+
 def inbound_text(msg: KapsoMessage) -> str | None:
     """Best-effort text or button title from an inbound Kapso/WA message."""
     if msg.type == "text" and msg.text:
@@ -35,7 +45,10 @@ def inbound_text(msg: KapsoMessage) -> str | None:
                 return bid
             return button_reply.get("title")
         if list_reply:
-            return list_reply.get("title") or list_reply.get("id")
+            lid = list_reply.get("id")
+            if lid:
+                return lid
+            return list_reply.get("title")
     if msg.button:
         return msg.button.get("text") or msg.button.get("payload")
     if msg.kapso.content:
@@ -62,7 +75,16 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                 logger.warning("get_intent fallback skipped: %s", exc)
 
     out = build_outbound(phone, text, resolved_command=resolved_command)
-    if out.buttons:
+    if out.has_list and out.list_button:
+        await client.send_interactive_list(
+            msg.phone_number,
+            out.text,
+            out.list_button,
+            _list_sections_for_api(out.list_sections),
+            header=out.header,
+            footer=out.footer,
+        )
+    elif out.buttons:
         await client.send_interactive_buttons(
             msg.phone_number,
             out.text,
