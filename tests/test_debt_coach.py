@@ -37,6 +37,8 @@ def test_parse_command_exact() -> None:
     assert dc.parse_command("hello") == "hello"
     assert dc.parse_command("HELLO") == "hello"
     assert dc.parse_command("menu") == "menu"
+    assert dc.parse_command("m_budget") == "budget"
+    assert dc.parse_command("m_help_principal") == "help principal"
     assert dc.parse_command("help_principal") == "help principal"
     assert dc.parse_command("help principal") == "help principal"
     assert dc.parse_command("im_short") == "im short"
@@ -221,3 +223,15 @@ def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
 
     assert "120" in out
     assert "general options" in out.lower()
+
+
+def test_menu_command_returns_interactive_list() -> None:
+    phone = "+10000000009"
+    out = dc.build_outbound(phone, "menu")
+    assert out.has_list
+    assert out.list_button == "See commands"
+    assert len(out.list_sections) == 1
+    rows = out.list_sections[0]["rows"]
+    assert len(rows) >= 8
+    assert any(r["id"] == "m_budget" for r in rows)
+    assert all("description" in r and r["description"] for r in rows)
