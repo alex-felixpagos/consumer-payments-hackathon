@@ -8,7 +8,7 @@ Extend handlers here; keep ``handle_inbound`` in ``app/bot.py`` thin.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Final
 
@@ -78,6 +78,18 @@ class UserSession:
         return self.available_after_buckets()
 
 
+@dataclass(frozen=True)
+class ReplyButton:
+    id: str
+    title: str
+
+
+@dataclass(frozen=True)
+class CoachReply:
+    body: str
+    buttons: tuple[ReplyButton, ...] = field(default_factory=tuple)
+
+
 def get_session(phone: str) -> UserSession:
     if phone not in _sessions:
         _sessions[phone] = UserSession()
@@ -114,6 +126,8 @@ def parse_command(text: str) -> str | None:
         return _CMD_HELP_PRINCIPAL
     if t == _CMD_DEMO_SHORTFALL or t.startswith(_CMD_DEMO_SHORTFALL + " "):
         return _CMD_DEMO_SHORTFALL
+    if t in {"show reminder", "show the reminder", "show_reminder"}:
+        return "reminder"
     token = t.split()[0]
     if token in {"start", "hello", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
         return token
@@ -282,7 +296,9 @@ def _cmd_demo_shortfall(session: UserSession) -> str:
     )
 
 
-def _route_command(cmd: str, session: UserSession) -> str:
+def _route_command(cmd: str, session: UserSession) -> str | CoachReply | CoachOutbound:
+    if cmd in ("start", "hello"):
+        return _welcome_outbound(session)
     if cmd == "menu":
         return _cmd_menu(session)
     if cmd == "goal":
@@ -300,7 +316,7 @@ def _route_command(cmd: str, session: UserSession) -> str:
     return _menu_text()
 
 
-def _route_conversation(text: str, session: UserSession) -> str:
+def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
     raw = text.strip()
     if session.step == CoachStep.IDLE:
         return "Type **start** or **hello** for the welcome message, or **menu** for commands."
@@ -342,20 +358,34 @@ def _route_conversation(text: str, session: UserSession) -> str:
         fits = avail >= goal
         session.step = CoachStep.READY
         fit_line = (
-            f"That leaves **${avail:,.2f}** for this payment vs your **${goal:,.2f}** goal — looks feasible."
+            f"Your ${goal:,.2f} goal looks feasible with ${avail:,.2f} available."
             if fits
             else (
-                f"That leaves **${avail:,.2f}** for this payment vs your **${goal:,.2f}** goal — "
-                "that’s tight; consider adjusting buckets or the goal."
+                f"You have ${avail:,.2f} available toward a ${goal:,.2f} goal. "
+                "That is tight; consider adjusting buckets or the goal."
             )
         )
         debt = session.debt_label or "Debt"
-        return (
-            f"Saved: {debt}, **${goal:,.2f}** due {session.due_date}. "
-            f"Income **${income:,.2f}**, essentials **${essentials:,.2f}**, flexible **${flexible:,.2f}**.\n"
-            f"{fit_line}\n\n"
-            "Simulated payment envelope is ready (copy only — not a real account). "
-            f"Next: type **envelope**, then **reminder**, then **{_CMD_HELP_PRINCIPAL}** if you want the shortfall ideas."
+        illustrative = round(goal * 0.001, 2)
+        return CoachReply(
+            body=(
+                "Great, your payment plan is ready.\n\n"
+                f"Debt: {debt}\n"
+                f"Due: {session.due_date}\n"
+                f"Payment goal: ${goal:,.2f}\n\n"
+                "Monthly plan:\n"
+                f"Income: ${income:,.2f}\n"
+                f"Essentials: ${essentials:,.2f}\n"
+                f"Flexible spending: ${flexible:,.2f}\n"
+                f"Available for payment: ${avail:,.2f}\n\n"
+                f"{fit_line}\n\n"
+                "Simulated envelope:\n"
+                f"${goal:,.2f} set aside for this payment.\n"
+                f"Estimated illustrative yield this month: ~${illustrative:,.2f}.\n"
+                "This is simulated only, not a real account or guaranteed return.\n\n"
+                "Next, I can show the day-before payment reminder."
+            ),
+            buttons=(ReplyButton(id="reminder", title="Show reminder"),),
         )
 
     # READY / IDLE: gentle recovery
@@ -379,6 +409,28 @@ def _reply_begin_tap(session: UserSession) -> CoachOutbound | None:
     )
 
 
+def _to_outbound(routed: str | CoachReply | CoachOutbound) -> CoachOutbound:
+    if isinstance(routed, CoachOutbound):
+        return routed
+    if isinstance(routed, CoachReply):
+        return CoachOutbound(
+            text=routed.body,
+            buttons=tuple({"id": button.id, "title": button.title} for button in routed.buttons),
+        )
+    return CoachOutbound(text=routed)
+
+
+def _to_reply(routed: str | CoachReply | CoachOutbound) -> CoachReply:
+    if isinstance(routed, CoachReply):
+        return routed
+    if isinstance(routed, CoachOutbound):
+        return CoachReply(
+            body=routed.text,
+            buttons=tuple(ReplyButton(id=button["id"], title=button["title"]) for button in routed.buttons),
+        )
+    return CoachReply(body=routed)
+
+
 def build_outbound(phone: str, text: str | None) -> CoachOutbound:
     """
     Latest inbound ``text`` for ``phone`` → outbound payload (text and optional buttons).
@@ -400,10 +452,37 @@ def build_outbound(phone: str, text: str | None) -> CoachOutbound:
     if cmd in ("start", "hello"):
         return _welcome_outbound(session)
     if cmd:
-        return CoachOutbound(text=_route_command(cmd, session))
-    return CoachOutbound(text=_route_conversation(raw, session))
+        routed = _route_command(cmd, session)
+    else:
+        routed = _route_conversation(raw, session)
+    return _to_outbound(routed)
+
+
+def build_response(phone: str, text: str | None) -> CoachReply:
+    """
+    Main entry: latest inbound text for ``phone`` → outbound response.
+    """
+    if text is None or not text.strip():
+        return CoachReply("Send text to continue — try: start or menu")
+
+    raw = text.strip()
+    session = get_session(phone)
+
+    if raw.lower() == _BTN_BEGIN_ID:
+        begin_out = _reply_begin_tap(session)
+        if begin_out:
+            return _to_reply(begin_out)
+
+    cmd = parse_command(raw)
+    if cmd:
+        routed = _route_command(cmd, session)
+    else:
+        routed = _route_conversation(raw, session)
+    return _to_reply(routed)
 
 
 def build_reply(phone: str, text: str | None) -> str:
-    """Backward-compatible: same body text as ``build_outbound`` (no button metadata)."""
-    return build_outbound(phone, text).text
+    """
+    Compatibility helper for tests and callers that only need text.
+    """
+    return build_response(phone, text).body
