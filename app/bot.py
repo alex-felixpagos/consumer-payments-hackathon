@@ -47,6 +47,14 @@ def reset_felix_pay_state_for_tests() -> None:
     _STORE.clear()
 
 
+def _is_hola(msg: KapsoMessage) -> bool:
+    """True when the user sent text equal to ``hola`` (case- and punctuation-insensitive)."""
+    if msg.type != "text" or msg.text is None:
+        return False
+    body = (msg.text.body or "").strip().strip("!?.,¿¡").lower()
+    return body == "hola"
+
+
 def inbound_text(msg: KapsoMessage) -> str | None:
     """Best-effort text or button title from an inbound Kapso/WA message."""
     if msg.type == "text" and msg.text:
@@ -98,6 +106,13 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     Felix Pay mock flow: image → amount buttons → confirm → receipt link.
     """
     phone = msg.phone_number
+
+    # --- Reset: user typed `hola` (any state) ---
+    if _is_hola(msg):
+        _STORE.delete(phone)
+        await client.send_whatsapp_message(phone, COLD_START_HINT)
+        return
+
     session = _STORE.get(phone)
 
     # --- New payment: inbound image (Bre-B QR photo) ---

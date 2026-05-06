@@ -141,6 +141,54 @@ def test_cold_start_text() -> None:
     asyncio.run(_run())
 
 
+def test_hola_resets_mid_flow() -> None:
+    async def _run() -> None:
+        fake = _FakeKapso()
+        phone = "+15550003333"
+
+        await handle_inbound(
+            _msg(msg_id="1", msg_type="image", from_number=phone, image={"id": "mid"}),
+            fake,  # type: ignore[arg-type]
+        )
+        await handle_inbound(
+            _msg(
+                msg_id="2",
+                msg_type="interactive",
+                from_number=phone,
+                interactive={"button_reply": {"id": "amt_10", "title": "$10"}},
+            ),
+            fake,  # type: ignore[arg-type]
+        )
+        assert len(fake.interactives) == 2
+
+        await handle_inbound(
+            _msg(msg_id="3", msg_type="text", from_number=phone, text="Hola!"),
+            fake,  # type: ignore[arg-type]
+        )
+        assert any("Felix Pay" in t[1] for t in fake.texts)
+
+        await handle_inbound(
+            _msg(msg_id="4", msg_type="text", from_number=phone, text="anything"),
+            fake,  # type: ignore[arg-type]
+        )
+        assert fake.texts[-1][1].startswith("Welcome to Felix Pay") or "Felix Pay" in fake.texts[-1][1]
+
+    asyncio.run(_run())
+
+
+def test_hola_cold_start_text() -> None:
+    async def _run() -> None:
+        fake = _FakeKapso()
+        await handle_inbound(
+            _msg(msg_id="a", msg_type="text", from_number="+15550004444", text="hola"),
+            fake,  # type: ignore[arg-type]
+        )
+        assert len(fake.texts) == 1
+        assert "Felix Pay" in fake.texts[0][1]
+
+    asyncio.run(_run())
+
+
 def test_webhook_post_requires_valid_json() -> None:
     r = client.post("/webhooks/whatsapp", content=b"not-json")
     assert r.status_code == 422
