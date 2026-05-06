@@ -11,7 +11,7 @@ Reads ``ANTHROPIC_API_KEY`` from ``.env`` via :mod:`app.config`.
 Run from repo root::
 
     python -m ideas.main --message "I can't cover principal this month"
-    python -m ideas.main --message "show my envelope"
+    python -m ideas.main --message "send to wallet"
 """
 
 from __future__ import annotations

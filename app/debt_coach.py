@@ -128,7 +128,8 @@ _MENU_LIST_ROW_TO_CMD: Final[dict[str, str]] = {
     "m_menu": "menu",
     "m_goal": "goal",
     "m_budget": "budget",
-    "m_envelope": "envelope",
+    "m_wallet": "envelope",
+    "m_envelope": "envelope",  # legacy list row id
     "m_reminder": "reminder",
     "m_im_short": _CMD_IM_SHORT,
     "m_help_principal": _CMD_HELP_PRINCIPAL,
@@ -168,15 +169,22 @@ def parse_command(text: str) -> str | None:
         return _CMD_IM_SHORT
     if t == _CMD_DEMO_SHORTFALL or t.startswith(_CMD_DEMO_SHORTFALL + " "):
         return _CMD_DEMO_SHORTFALL
-    if t in {"show reminder", "show the reminder", "show_reminder"}:
+    if t in {
+        "set reminder",
+        "set the reminder",
+        "set_reminder",
+        "show reminder",
+        "show the reminder",
+        "show_reminder",
+    }:
         return "reminder"
     if t == "help_principal" or t.startswith("help_principal "):
         return _CMD_HELP_PRINCIPAL
     if t == "im_short" or t.startswith("im_short "):
         return _CMD_IM_SHORT
     token = t.split()[0]
-    if token in {"start", "hello", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
-        return token
+    if token in {"start", "hello", "menu", "goal", "budget", "envelope", "wallet", "reminder"} and t == token:
+        return "envelope" if token == "wallet" else token
     return None
 
 
@@ -193,8 +201,8 @@ def map_intent_label_to_command(intent: str) -> str | None:
         return _CMD_HELP_PRINCIPAL
     if label == "demo_shortfall":
         return _CMD_DEMO_SHORTFALL
-    if label in {"start", "menu", "goal", "budget", "envelope", "reminder"}:
-        return label
+    if label in {"start", "menu", "goal", "budget", "envelope", "wallet", "reminder"}:
+        return "envelope" if label in {"wallet", "envelope"} else label
     if label in {"im_short", "shortfall"}:
         return _CMD_IM_SHORT
     # Router groups greetings with ``start``; treat like ``start`` for welcome.
@@ -296,7 +304,7 @@ def _menu_list_sections(session: UserSession) -> tuple[dict[str, Any], ...]:
 
     if _has_goal(session):
         rows.append({"id": "m_budget", "title": "💰 Set budget"})
-        rows.append({"id": "m_envelope", "title": "📦 Envelope"})
+        rows.append({"id": "m_wallet", "title": "💸 Send to wallet"})
         rows.append({"id": "m_reminder", "title": "🔔 Reminder"})
         rows.append({"id": "m_help_principal", "title": "🆘 Help with payment"})
 
@@ -392,6 +400,17 @@ def _begin_budget_flow(session: UserSession) -> str:
     )
 
 
+def _wallet_message(session: UserSession) -> str:
+    """Same copy as the ``envelope`` / ``wallet`` command (payment goal must be set)."""
+    label = session.debt_label or "your debt"
+    amt = session.payment_amount or 0.0
+    illustrative = round(amt * 0.001, 2)
+    return (
+        f"Send to wallet for {label}: *${amt:,.2f}* lined up for this payment.\n"
+        f"Illustrative yield this month: ~${illustrative:,.2f} (not guaranteed)."
+    )
+
+
 def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
     """Summary after income, essentials, and flexible are set."""
     avail = session.available_after_buckets()
@@ -411,7 +430,19 @@ def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
         )
     )
     debt = session.debt_label or "Debt"
-    illustrative = round(goal * 0.001, 2)
+    wallet_block = _wallet_message(session)
+    if fits:
+        tap_line = "Tap a button below, or say *reminder* or *wallet*."
+        buttons = (
+            ReplyButton(id="reminder", title="Set reminder"),
+            ReplyButton(id="wallet", title="Send to wallet"),
+        )
+    else:
+        tap_line = "Tap a button below, or say *reminder* or *I'm short*."
+        buttons = (
+            ReplyButton(id="reminder", title="Set reminder"),
+            ReplyButton(id="im_short", title="I'm short"),
+        )
     return CoachReply(
         body=(
             "Great, your payment plan is ready.\n\n"
@@ -424,15 +455,10 @@ def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
             f"Flexible spending: ${flexible:,.2f}\n"
             f"Available for payment: ${avail:,.2f}\n\n"
             f"{fit_line}\n\n"
-            "Set aside for this payment:\n"
-            f"${goal:,.2f} toward your goal.\n"
-            f"Illustrative yield this month: ~${illustrative:,.2f} (not guaranteed).\n\n"
-            "Tap a button below, or say *reminder* or *I'm short*."
+            f"{wallet_block}\n\n"
+            f"{tap_line}"
         ),
-        buttons=(
-            ReplyButton(id="reminder", title="Show reminder"),
-            ReplyButton(id="im_short", title="I'm short"),
-        ),
+        buttons=buttons,
     )
 
 
@@ -445,14 +471,7 @@ def _cmd_budget(session: UserSession) -> str:
 def _cmd_envelope(session: UserSession) -> str:
     if session.payment_amount is None:
         return "Complete your payment goal first (start → debt name → amount & date)."
-    label = session.debt_label or "your debt"
-    amt = session.payment_amount
-    # Illustrative only (PRD demo assumptions).
-    illustrative = round(amt * 0.001, 2)
-    return (
-        f"Payment envelope for {label}: *${amt:,.2f}* set aside toward this goal.\n"
-        f"Illustrative yield this month: ~${illustrative:,.2f} (not guaranteed)."
-    )
+    return _wallet_message(session)
 
 
 def _cmd_reminder(session: UserSession) -> str:
@@ -461,8 +480,9 @@ def _cmd_reminder(session: UserSession) -> str:
     label = session.debt_label or "your payment"
     amt = session.payment_amount
     return (
-        f"Reminder: your {label} payment is due tomorrow ({session.due_date}). "
-        f"Have *${amt:,.2f}* ready at your bank so you’re set to pay.\n\n"
+        f"For *{label}*, your payment is due on *{session.due_date}*. "
+        f"I’ll send you a message here *one day before* that date so you can have "
+        f"*${amt:,.2f}* ready in time.\n\n"
         "If covering principal is stressful, tap/try *I'm short*."
     )
 
@@ -668,7 +688,7 @@ def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
 
     # READY / IDLE: gentle recovery
     return (
-        "You’re set for this demo session. Try: envelope · reminder · "
+        "You’re set for this demo session. Try: wallet · reminder · "
         f"{_CMD_HELP_PRINCIPAL} · menu · start (reset)\n"
         f"Tip: {_CMD_DEMO_SHORTFALL} then {_CMD_HELP_PRINCIPAL} for the pitch shortfall copy."
     )
