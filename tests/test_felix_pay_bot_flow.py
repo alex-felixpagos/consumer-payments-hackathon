@@ -178,7 +178,15 @@ def test_handle_inbound_happy_path_image_to_receipt(monkeypatch: pytest.MonkeyPa
 
         html = client.get(f"/r/{rid}")
         assert html.status_code == 200
-        assert b"Receipt" in html.content
+        body = html.text
+        assert "Payment Receipt" in body
+        assert "$12.00" in body
+        assert "50,760" in body
+        assert "Café El Tiempo" in body
+        assert "Bre-B" in body
+        assert "Confirmed" in body
+        assert "$235.50" in body
+        assert "20%" in body  # tip row label
 
     asyncio.run(_run())
 
