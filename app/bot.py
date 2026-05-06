@@ -13,6 +13,7 @@ import logging
 import re
 import threading
 import time
+from typing import Any
 
 import httpx
 
@@ -75,6 +76,47 @@ def inbound_text(msg: KapsoMessage) -> str | None:
     return None
 
 
+def _kapso_error_details(exc: httpx.HTTPError) -> str:
+    response = getattr(exc, "response", None)
+    if response is None:
+        return str(exc)
+    try:
+        error = response.json().get("error", {})
+    except ValueError:
+        return response.text
+    return (
+        error.get("error_data", {}).get("details")
+        or error.get("message")
+        or response.text
+    )
+
+
+async def _send_whatsapp_text_safely(
+    client: KapsoClient,
+    to: str,
+    text: str,
+    context: str,
+) -> bool:
+    try:
+        await client.send_whatsapp_message(to, text)
+    except httpx.HTTPError as exc:
+        logger.error("Could not send WhatsApp text during %s: %s", context, _kapso_error_details(exc))
+        return False
+    return True
+
+
+def _payment_flow_error_message(details: str) -> str:
+    if "display name approval" in details.lower():
+        return (
+            "WhatsApp is blocking this sender because the phone number needs display name approval "
+            "in Meta/Kapso before messages can be sent."
+        )
+    return (
+        "I tried to open the payment Flow, but Meta rejected KAPSO_FLOW_ID. "
+        "Make sure the Flow is published and belongs to the same WhatsApp Business Account as this Kapso phone number."
+    )
+
+
 async def _handle_payment_submission(msg: KapsoMessage, client: KapsoClient) -> None:
     reply = extract_nfm_reply(msg)
     if reply is None:
@@ -99,14 +141,16 @@ async def _handle_payment_submission(msg: KapsoMessage, client: KapsoClient) -> 
     await client.send_whatsapp_message(msg.phone_number, body)
 
 
-async def _handle_pay_command(amount: float, msg: KapsoMessage, client: KapsoClient) -> None:
+async def _handle_pay_command(amount: float, msg: KapsoMessage, client: KapsoClient) -> bool:
     settings = get_settings()
     if not settings.kapso_flow_id:
-        await client.send_whatsapp_message(
+        await _send_whatsapp_text_safely(
+            client,
             msg.phone_number,
             "Payment flow is not configured (KAPSO_FLOW_ID missing). Run `python -m app.services.flow_setup` first.",
+            "missing payment Flow configuration",
         )
-        return
+        return False
 
     amount_cents = int(round(amount * 100))
     amount_display = f"${amount:.2f} {settings.stripe_currency.upper()}"
@@ -122,18 +166,33 @@ async def _handle_pay_command(amount: float, msg: KapsoMessage, client: KapsoCli
                 "amount_cents": amount_cents,
             },
         )
+        return True
     except httpx.HTTPStatusError as e:
-        details = ""
-        try:
-            details = e.response.json().get("error", {}).get("error_data", {}).get("details", "")
-        except ValueError:
-            details = e.response.text
+        details = _kapso_error_details(e)
         logger.error("Payment Flow send failed for flow_id=%s: %s", settings.kapso_flow_id, details)
-        await client.send_whatsapp_message(
+        await _send_whatsapp_text_safely(
+            client,
             msg.phone_number,
-            "I tried to open the payment Flow, but Meta rejected KAPSO_FLOW_ID. "
-            "Make sure the Flow is published and belongs to the same WhatsApp Business Account as this Kapso phone number.",
+            _payment_flow_error_message(details),
+            "payment Flow failure fallback",
         )
+        return False
+    except httpx.HTTPError as e:
+        logger.error("Payment Flow send failed for flow_id=%s: %s", settings.kapso_flow_id, _kapso_error_details(e))
+        return False
+
+
+def _payment_trigger_amount(payment_trigger: Any) -> float:
+    if not isinstance(payment_trigger, dict):
+        return 1.0
+    amount = payment_trigger.get("amount")
+    try:
+        if amount is None and payment_trigger.get("amount_cents") is not None:
+            amount = float(payment_trigger["amount_cents"]) / 100
+        parsed = float(amount if amount is not None else 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+    return parsed if parsed > 0 else 1.0
 
 
 async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
@@ -200,8 +259,13 @@ async def handle_agent_inbound(agent_name: str, msg: KapsoMessage, client: Kapso
         return
 
     reply_text = (result.get("response") or "").strip()
-    if not reply_text:
+    payment_trigger = result.get("payment_trigger")
+    if not reply_text and not payment_trigger:
         logger.warning("Agent %s produced empty reply for phone=%s", agent.name, msg.phone_number)
         return
 
-    await client.send_whatsapp_message(msg.phone_number, reply_text)
+    if reply_text:
+        await _send_whatsapp_text_safely(client, msg.phone_number, reply_text, "agent reply")
+
+    if payment_trigger:
+        await _handle_pay_command(_payment_trigger_amount(payment_trigger), msg, client)

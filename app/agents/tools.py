@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from app.skills import search_movie_showtimes
+from app.skills import search_movie_showtimes, start_payment_flow
 
 AVAILABLE_TOOLS: dict[str, Callable[..., Any]] = {
     "movie_showtimes": search_movie_showtimes,
+    "start_payment_flow": start_payment_flow,
 }
 
 

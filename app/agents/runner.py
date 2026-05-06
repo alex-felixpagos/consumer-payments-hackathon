@@ -95,10 +95,30 @@ _GEMINI_FALLBACK_ERRORS = (
     ServiceUnavailableError,
     Timeout,
 )
+_PAYMENT_FLOW_MARKER_RE = re.compile(
+    r"\[\[PAYMENT_FLOW\s+amount=(?P<amount>\d+(?:\.\d{1,2})?)\]\]",
+    re.IGNORECASE,
+)
+_PAYMENT_FLOW_TOOL_INSTRUCTION = """
+
+Payment Flow tool
+- When the user has selected the movie/order and the next step is payment, call `start_payment_flow`.
+- Use amount 1.00 unless the exact payable total is known.
+- After calling the tool, write a short confirmation or order summary and tell the user to tap the payment button.
+- Do not ask the user to type "pay 1".
+- Put the tool's `final_response_marker` on its own final line. The server strips it and sends the WhatsApp Flow.
+"""
 
 
 class TransientAgentError(RuntimeError):
     """Raised when the LLM provider stays unavailable after retries."""
+
+
+def _instruction_for_agent(agent: Agent) -> str:
+    instruction = agent.system_prompt or "You are a helpful assistant."
+    if "start_payment_flow" in agent.tool_names:
+        instruction += _PAYMENT_FLOW_TOOL_INSTRUCTION
+    return instruction
 
 
 def _sanitize_identifier(name: str) -> str:
@@ -139,7 +159,7 @@ def build_llm_agent(agent: Agent, agents_map: dict[str, Agent], visited: set[str
         name=_sanitize_identifier(agent.name) + f"_{agent.id[-6:]}",
         description=description,
         model=LiteLlm(model=f"anthropic/{agent.model}"),
-        instruction=agent.system_prompt or "You are a helpful assistant.",
+        instruction=_instruction_for_agent(agent),
         tools=resolve_agent_tools(agent.tool_names),
         sub_agents=sub_agents,
     )
@@ -174,6 +194,69 @@ def _gemini_model_id() -> str:
     return f"gemini/{configured}"
 
 
+def _normalize_payment_trigger(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    if value.get("type") == "payment_flow_trigger" or value.get("trigger_payment_flow") is True:
+        amount_raw = value.get("amount")
+        try:
+            if amount_raw is None and value.get("amount_cents") is not None:
+                amount_raw = float(value["amount_cents"]) / 100
+            amount = float(amount_raw if amount_raw is not None else 1.0)
+        except (TypeError, ValueError):
+            amount = 1.0
+        if amount <= 0:
+            amount = 1.0
+        return {
+            "amount": amount,
+            "amount_cents": int(round(amount * 100)),
+            "movie_title": value.get("movie_title"),
+            "order_summary": value.get("order_summary"),
+        }
+
+    for nested_key in ("result", "response", "content", "output"):
+        nested = value.get(nested_key)
+        trigger = _normalize_payment_trigger(nested)
+        if trigger:
+            return trigger
+    return None
+
+
+def _payment_trigger_from_part(part: Any) -> dict[str, Any] | None:
+    function_response = getattr(part, "function_response", None)
+    if not function_response:
+        return None
+
+    name = getattr(function_response, "name", None)
+    response = getattr(function_response, "response", None)
+    if isinstance(function_response, dict):
+        name = function_response.get("name", name)
+        response = function_response.get("response", response)
+
+    if name and name != "start_payment_flow":
+        return None
+    return _normalize_payment_trigger(response)
+
+
+def _extract_payment_marker(text: str) -> tuple[dict[str, Any] | None, str]:
+    match = _PAYMENT_FLOW_MARKER_RE.search(text)
+    if not match:
+        return None, text
+
+    try:
+        amount = float(match.group("amount"))
+    except (TypeError, ValueError):
+        amount = 1.0
+    cleaned = _PAYMENT_FLOW_MARKER_RE.sub("", text).strip()
+    return {
+        "amount": amount,
+        "amount_cents": int(round(amount * 100)),
+        "movie_title": None,
+        "order_summary": None,
+    }, cleaned
+
+
 async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message: str) -> dict[str, Any]:
     """Drive a single user turn through an already-built runner+session."""
     from google.genai import types as genai_types
@@ -182,6 +265,7 @@ async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message
 
     final_text = ""
     delegated_to: str | None = None
+    payment_trigger: dict[str, Any] | None = None
     events_summary: list[dict[str, Any]] = []
     root_name = runner.agent.name
 
@@ -194,15 +278,29 @@ async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message
         if actions and getattr(actions, "transfer_to_agent", None):
             events_summary.append({"type": "transfer", "to": actions.transfer_to_agent})
 
-        if event.is_final_response() and event.content and event.content.parts:
-            for part in event.content.parts:
+        event_content = getattr(event, "content", None)
+        event_parts = getattr(event_content, "parts", None) if event_content else None
+        if event.is_final_response() and event_parts:
+            for part in event_parts:
                 if getattr(part, "text", None):
                     final_text += part.text
+        if event_parts:
+            for part in event_parts:
+                maybe_trigger = _payment_trigger_from_part(part)
+                if maybe_trigger:
+                    payment_trigger = maybe_trigger
+
+    marker_trigger, final_text = _extract_payment_marker(final_text)
+    if marker_trigger:
+        payment_trigger = payment_trigger or marker_trigger
+    if payment_trigger:
+        events_summary.append({"type": "payment_flow_trigger", **payment_trigger})
 
     return {
         "response": final_text,
         "delegated_to": delegated_to,
         "events": events_summary,
+        "payment_trigger": payment_trigger,
     }
 
 
