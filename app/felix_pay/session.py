@@ -13,6 +13,7 @@ class PaymentSessionStatus(StrEnum):
 
     AWAITING_AMOUNT = "AWAITING_AMOUNT"
     AWAITING_CURRENCY = "AWAITING_CURRENCY"
+    AWAITING_TIP = "AWAITING_TIP"
     AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
     PROCESSING = "PROCESSING"
     COMPLETE = "COMPLETE"
@@ -30,6 +31,10 @@ class PaymentSession:
     amount_usd: float | None
     amount_cop: int | None
     fx_rate: float | None
+    tip_pct: float | None
+    tip_usd: float | None
+    total_usd: float | None
+    total_cop: int | None
     session_id: UUID
     created_at: datetime
     status: PaymentSessionStatus

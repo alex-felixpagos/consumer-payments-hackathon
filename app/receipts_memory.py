@@ -17,6 +17,12 @@ class ReceiptRecord:
     fx_rate: float
     vendor_name: str
     created_at: str  # ISO 8601 string
+    tip_pct: float = 0.0
+    tip_usd: float = 0.0
+    total_usd: float = 0.0
+    total_cop: float = 0.0
+    payment_rail: str = "Bre-B"
+    new_balance_usd: float = 0.0
 
 
 def save_receipt(record: ReceiptRecord) -> str:

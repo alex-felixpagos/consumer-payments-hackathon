@@ -23,9 +23,15 @@ _COP_PER_USD = 4230.0
 #: Lock window shown to the payer in the confirmation preview.
 _RATE_LOCK_SECONDS = 60
 
+#: Payment rail label that appears on the receipt + confirmation copy.
+PAYMENT_RAIL_LABEL = "Bre-B"
+
 _CURRENCY_USD = "USD"
 _CURRENCY_COP = "COP"
 _VALID_CURRENCIES = frozenset({_CURRENCY_USD, _CURRENCY_COP})
+
+#: Tip percentages exposed in the WhatsApp interactive list.
+ALLOWED_TIP_PCTS: tuple[float, ...] = (0.0, 0.15, 0.20, 0.25)
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,10 @@ def start_session_after_image_stub(payer_phone: str) -> PaymentSession:
         amount_usd=None,
         amount_cop=None,
         fx_rate=None,
+        tip_pct=None,
+        tip_usd=None,
+        total_usd=None,
+        total_cop=None,
         session_id=new_session_id(),
         created_at=utcnow(),
         status=PaymentSessionStatus.AWAITING_AMOUNT,
@@ -126,6 +136,29 @@ def apply_currency_choice(session: PaymentSession, currency: str) -> PaymentSess
         amount_usd=amount_usd,
         amount_cop=amount_cop,
         fx_rate=_COP_PER_USD,
+        status=PaymentSessionStatus.AWAITING_TIP,
+    )
+
+
+def apply_tip(session: PaymentSession, tip_pct: float) -> PaymentSession:
+    """Apply the chosen tip percentage and compute USD + COP totals."""
+    if session.amount_usd is None or session.amount_cop is None:
+        msg = "Cannot pick tip before currency is chosen."
+        raise ValueError(msg)
+    if tip_pct < 0:
+        msg = f"Tip percent must be >= 0 (got {tip_pct})."
+        raise ValueError(msg)
+
+    tip_usd = round(float(session.amount_usd) * float(tip_pct), 2)
+    total_usd = round(float(session.amount_usd) + tip_usd, 2)
+    total_cop = int(round(total_usd * float(session.fx_rate or _COP_PER_USD)))
+
+    return replace(
+        session,
+        tip_pct=float(tip_pct),
+        tip_usd=tip_usd,
+        total_usd=total_usd,
+        total_cop=total_cop,
         status=PaymentSessionStatus.AWAITING_CONFIRMATION,
     )
 
@@ -136,11 +169,21 @@ def build_confirmation_preview(session: PaymentSession) -> str:
         msg = "Session has no amount set; cannot build confirmation preview."
         raise ValueError(msg)
     rate = int(round(session.fx_rate or _COP_PER_USD))
-    lines = [
-        f"*Pay {session.vendor_name}*",
-        f"${session.amount_usd:,.2f} USD → {session.amount_cop:,} COP",
-        f"Rate: {rate:,} · Locked for {_RATE_LOCK_SECONDS}s",
-    ]
+    total_usd = session.total_usd if session.total_usd is not None else session.amount_usd
+    total_cop = session.total_cop if session.total_cop is not None else session.amount_cop
+    lines = [f"*Pay {session.vendor_name}*"]
+    if session.tip_pct is not None and session.tip_usd is not None and session.tip_usd > 0:
+        tip_label = f"{int(round(session.tip_pct * 100))}%"
+        lines.extend(
+            [
+                f"Subtotal: ${session.amount_usd:,.2f} USD ({session.amount_cop:,} COP)",
+                f"Tip ({tip_label}): ${session.tip_usd:,.2f} USD",
+                f"*Total: ${total_usd:,.2f} USD → {total_cop:,} COP*",
+            ]
+        )
+    else:
+        lines.append(f"${total_usd:,.2f} USD → {total_cop:,} COP")
+    lines.append(f"Rate: {rate:,} · Locked for {_RATE_LOCK_SECONDS}s")
     return "\n".join(lines)
 
 
@@ -153,6 +196,11 @@ def process_confirm(session: PaymentSession) -> ConfirmResult:
         msg = "Cannot confirm without amount_usd and amount_cop."
         raise ValueError(msg)
 
+    tip_pct = session.tip_pct if session.tip_pct is not None else 0.0
+    tip_usd = session.tip_usd if session.tip_usd is not None else 0.0
+    total_usd = session.total_usd if session.total_usd is not None else float(session.amount_usd)
+    total_cop = session.total_cop if session.total_cop is not None else int(session.amount_cop)
+
     receipt_id = uuid4()
     completed = replace(session, status=PaymentSessionStatus.COMPLETE)
     receipt: dict[str, Any] = {
@@ -163,6 +211,11 @@ def process_confirm(session: PaymentSession) -> ConfirmResult:
         "amount_usd": completed.amount_usd,
         "amount_cop": completed.amount_cop,
         "fx_rate": completed.fx_rate,
+        "tip_pct": tip_pct,
+        "tip_usd": tip_usd,
+        "total_usd": total_usd,
+        "total_cop": total_cop,
+        "payment_rail": PAYMENT_RAIL_LABEL,
         "session_id": str(completed.session_id),
         "status": completed.status.value,
     }
@@ -177,5 +230,9 @@ def process_cancel(session: PaymentSession) -> PaymentSession:
         amount_usd=None,
         amount_cop=None,
         fx_rate=None,
+        tip_pct=None,
+        tip_usd=None,
+        total_usd=None,
+        total_cop=None,
         status=PaymentSessionStatus.AWAITING_AMOUNT,
     )

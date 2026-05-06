@@ -126,6 +126,56 @@ class KapsoClient:
             payload["interactive"]["footer"] = {"text": footer}
         return await self._post_messages(payload, f"interactive buttons to {to}")
 
+    async def send_interactive_list(
+        self,
+        to: str,
+        body_text: str,
+        button_text: str,
+        sections: list[dict[str, Any]],
+        header: str | None = None,
+        footer: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        WhatsApp interactive list message.
+
+        ``sections`` is a list of dicts shaped like
+        ``{"title": "...", "rows": [{"id": "...", "title": "...", "description": "..."}, ...]}``.
+        WhatsApp limits a list to 10 total rows across all sections.
+        """
+        normalized_sections: list[dict[str, Any]] = []
+        for section in sections:
+            normalized_rows: list[dict[str, Any]] = []
+            for row in section.get("rows", []):
+                row_payload: dict[str, Any] = {
+                    "id": row["id"],
+                    "title": row["title"],
+                }
+                if row.get("description"):
+                    row_payload["description"] = row["description"]
+                normalized_rows.append(row_payload)
+            normalized_sections.append(
+                {"title": section.get("title", ""), "rows": normalized_rows}
+            )
+
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": self._normalize_to(to),
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {"text": body_text},
+                "action": {
+                    "button": button_text,
+                    "sections": normalized_sections,
+                },
+            },
+        }
+        if header:
+            payload["interactive"]["header"] = {"type": "text", "text": header}
+        if footer:
+            payload["interactive"]["footer"] = {"text": footer}
+        return await self._post_messages(payload, f"interactive list to {to}")
+
     async def send_cta_url_button(
         self,
         to: str,

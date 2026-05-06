@@ -10,6 +10,31 @@ INVALID_AMOUNT_HINT = "I couldn't read that amount. Try typing a number, e.g. *1
 
 CURRENCY_PROMPT = "Which currency are you sending?"
 
+TIP_PROMPT = "Add a tip for the merchant?"
+
+TIP_LIST_BUTTON = "Choose tip"
+
+TIP_INVALID_HINT = "Pick one of the tip options below to continue."
+
+#: Rich receipt chat message rendered after a successful confirm.
+RECEIPT_CHAT_MESSAGE = (
+    "✓ *Payment confirmed*\n"
+    "\n"
+    "*{vendor_name}*\n"
+    "Total: *${total_usd:,.2f} USD* ({total_cop:,} COP)\n"
+    "{breakdown}"
+    "Rail: {payment_rail} · Settled in seconds\n"
+    "New Felix Wallet balance: *${new_balance_usd:,.2f} USD*\n"
+    "\n"
+    "View full receipt: {receipt_url}"
+)
+
+#: Optional sub-tile used inside RECEIPT_CHAT_MESSAGE when a tip was added.
+RECEIPT_BREAKDOWN_WITH_TIP = (
+    "• Subtotal: ${amount_usd:,.2f} USD ({amount_cop:,} COP)\n"
+    "• Tip ({tip_label}): ${tip_usd:,.2f} USD\n"
+)
+
 #: One-line vendor location + rail string (single-vendor stub for the hackathon).
 STUB_VENDOR_LOCATION = "Bogotá, Colombia · Bre-B via Bancolombia"
 

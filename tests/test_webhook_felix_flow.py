@@ -38,6 +38,7 @@ class _FakeKapso:
     def __init__(self) -> None:
         self.texts: list[tuple[str, str]] = []
         self.interactives: list[tuple[str, str, list[dict[str, str]]]] = []
+        self.lists: list[tuple[str, str, str, list[dict]]] = []
 
     async def send_whatsapp_message(self, to: str, text: str) -> dict:
         self.texts.append((to, text))
@@ -53,6 +54,18 @@ class _FakeKapso:
     ) -> dict:
         self.interactives.append((to, body_text, buttons))
         return {"messages": [{"id": "y"}]}
+
+    async def send_interactive_list(
+        self,
+        to: str,
+        body_text: str,
+        button_text: str,
+        sections: list[dict],
+        header: str | None = None,
+        footer: str | None = None,
+    ) -> dict:
+        self.lists.append((to, body_text, button_text, sections))
+        return {"messages": [{"id": "z"}]}
 
 
 def _kapso_meta() -> dict:
@@ -114,6 +127,7 @@ def test_webhook_image_confirm_creates_receipt(monkeypatch) -> None:
             headers={"content-type": "application/json"},
         )
         assert r3.status_code == 200
+        assert len(fake.lists) == 1
 
         r4 = client.post(
             "/webhooks/whatsapp",
@@ -123,13 +137,29 @@ def test_webhook_image_confirm_creates_receipt(monkeypatch) -> None:
                     _msg(
                         "4",
                         "interactive",
-                        interactive={"button_reply": {"id": "pay_confirm", "title": "Confirm ✓"}},
+                        interactive={"list_reply": {"id": "tip_0", "title": "No tip"}},
                     ),
                 )
             ),
             headers={"content-type": "application/json"},
         )
         assert r4.status_code == 200
+
+        r5 = client.post(
+            "/webhooks/whatsapp",
+            content=json.dumps(
+                _webhook_body(
+                    phone,
+                    _msg(
+                        "5",
+                        "interactive",
+                        interactive={"button_reply": {"id": "pay_confirm", "title": "Confirm ✓"}},
+                    ),
+                )
+            ),
+            headers={"content-type": "application/json"},
+        )
+        assert r5.status_code == 200
 
     assert any("/r/" in t[1] for t in fake.texts)
     rid = next(t[1] for t in fake.texts if "/r/" in t[1]).split("/r/")[-1].strip().split()[0]

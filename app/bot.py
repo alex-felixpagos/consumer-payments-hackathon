@@ -9,12 +9,14 @@ import logging
 from datetime import datetime, timezone
 from app.config import get_settings
 from app.felix_pay import (
+    PAYMENT_RAIL_LABEL,
     PaymentSession,
     PaymentSessionStatus,
     SessionStore,
     WalletStore,
     apply_amount_input,
     apply_currency_choice,
+    apply_tip,
     build_confirmation_preview,
     process_confirm,
     start_session_after_image_stub,
@@ -24,9 +26,13 @@ from app.felix_pay.user_messages import (
     CURRENCY_PROMPT,
     INVALID_AMOUNT_HINT,
     PAYMENT_CANCELLED,
-    PAYMENT_SENT,
     PROCESSING_PAYMENT,
+    RECEIPT_BREAKDOWN_WITH_TIP,
+    RECEIPT_CHAT_MESSAGE,
     STUB_VENDOR_LOCATION,
+    TIP_INVALID_HINT,
+    TIP_LIST_BUTTON,
+    TIP_PROMPT,
     VENDOR_AMOUNT_PROMPT,
     VENDOR_FOUND_CARD,
     WALLET_BALANCE_CARD,
@@ -56,6 +62,15 @@ _CURRENCY_BUTTON_TO_CODE: dict[str, str] = {
     "cur_usd": "USD",
     "cur_cop": "COP",
 }
+
+#: Tip option ids -> tip percentage. Order matches what we send to WhatsApp.
+_TIP_LIST_OPTIONS: list[tuple[str, str, float]] = [
+    ("tip_0", "No tip", 0.0),
+    ("tip_15", "15%", 0.15),
+    ("tip_20", "20%", 0.20),
+    ("tip_25", "25%", 0.25),
+]
+_TIP_ID_TO_PCT: dict[str, float] = {opt[0]: opt[2] for opt in _TIP_LIST_OPTIONS}
 
 
 def reset_felix_pay_state_for_tests() -> None:
@@ -122,6 +137,57 @@ async def _send_amount_prompt(client: KapsoClient, to: str, vendor_name: str) ->
 
 async def _send_currency_prompt(client: KapsoClient, to: str) -> None:
     await client.send_interactive_buttons(to, CURRENCY_PROMPT, _CURRENCY_BUTTONS)
+
+
+async def _send_tip_prompt(client: KapsoClient, to: str) -> None:
+    sections = [
+        {
+            "title": "Tip",
+            "rows": [
+                {"id": opt_id, "title": title}
+                for opt_id, title, _pct in _TIP_LIST_OPTIONS
+            ],
+        }
+    ]
+    await client.send_interactive_list(
+        to,
+        body_text=TIP_PROMPT,
+        button_text=TIP_LIST_BUTTON,
+        sections=sections,
+    )
+
+
+def _build_receipt_chat_message(
+    *,
+    vendor_name: str,
+    amount_usd: float,
+    amount_cop: int | float,
+    tip_pct: float,
+    tip_usd: float,
+    total_usd: float,
+    total_cop: int | float,
+    payment_rail: str,
+    new_balance_usd: float,
+    receipt_url: str,
+) -> str:
+    if tip_pct > 0 and tip_usd > 0:
+        breakdown = RECEIPT_BREAKDOWN_WITH_TIP.format(
+            amount_usd=float(amount_usd),
+            amount_cop=int(amount_cop),
+            tip_label=f"{int(round(tip_pct * 100))}%",
+            tip_usd=float(tip_usd),
+        )
+    else:
+        breakdown = ""
+    return RECEIPT_CHAT_MESSAGE.format(
+        vendor_name=vendor_name,
+        total_usd=float(total_usd),
+        total_cop=int(total_cop),
+        breakdown=breakdown,
+        payment_rail=payment_rail,
+        new_balance_usd=float(new_balance_usd),
+        receipt_url=receipt_url,
+    )
 
 
 async def _send_confirmation_prompt(client: KapsoClient, to: str, session_preview: str) -> None:
@@ -207,6 +273,39 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             _STORE.delete(phone)
             return
         _STORE.set(phone, updated)
+        await _send_tip_prompt(client, phone)
+        return
+
+    # --- Awaiting tip selection ---
+    if session.status == PaymentSessionStatus.AWAITING_TIP:
+        list_id = None
+        if msg.interactive:
+            list_reply = msg.interactive.get("list_reply") or {}
+            list_id = list_reply.get("id") or None
+        tip_pct = _TIP_ID_TO_PCT.get(list_id or button_id or "")
+        if tip_pct is None and msg.type == "text":
+            normalized = text_body.lower().replace("%", "").strip()
+            if normalized in {"no", "no tip", "none", "skip", "0"}:
+                tip_pct = 0.0
+            elif normalized == "15":
+                tip_pct = 0.15
+            elif normalized == "20":
+                tip_pct = 0.20
+            elif normalized == "25":
+                tip_pct = 0.25
+
+        if tip_pct is None:
+            await client.send_whatsapp_message(phone, TIP_INVALID_HINT)
+            await _send_tip_prompt(client, phone)
+            return
+
+        try:
+            updated = apply_tip(session, tip_pct)
+        except ValueError:
+            await client.send_whatsapp_message(phone, INVALID_AMOUNT_HINT)
+            _STORE.delete(phone)
+            return
+        _STORE.set(phone, updated)
         preview = build_confirmation_preview(updated)
         await _send_confirmation_prompt(client, phone, preview)
         return
@@ -225,30 +324,48 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             await client.send_whatsapp_message(phone, PROCESSING_PAYMENT)
             await asyncio.sleep(PROCESSING_DELAY_SECONDS)
 
-            paid_usd = float(result.receipt["amount_usd"])
-            new_balance_usd = _WALLET.debit(phone, paid_usd)
+            total_usd = float(result.receipt["total_usd"])
+            total_cop = int(result.receipt["total_cop"])
+            new_balance_usd = _WALLET.debit(phone, total_usd)
 
             rid = str(result.receipt_id)
             save_receipt(
                 ReceiptRecord(
                     receipt_id=rid,
-                    amount_usd=paid_usd,
+                    amount_usd=float(result.receipt["amount_usd"]),
                     amount_cop=float(result.receipt["amount_cop"]),
                     fx_rate=float(result.receipt["fx_rate"]),
                     vendor_name=str(result.receipt["vendor_name"]),
                     created_at=datetime.now(timezone.utc).isoformat(),
+                    tip_pct=float(result.receipt["tip_pct"]),
+                    tip_usd=float(result.receipt["tip_usd"]),
+                    total_usd=total_usd,
+                    total_cop=float(total_cop),
+                    payment_rail=str(result.receipt.get("payment_rail", PAYMENT_RAIL_LABEL)),
+                    new_balance_usd=float(new_balance_usd),
                 )
             )
             _STORE.delete(phone)
             url = f"{_receipt_base_url()}/r/{rid}"
             await client.send_whatsapp_message(
                 phone,
-                f"{PAYMENT_SENT}\n{url}",
+                _build_receipt_chat_message(
+                    vendor_name=str(result.receipt["vendor_name"]),
+                    amount_usd=float(result.receipt["amount_usd"]),
+                    amount_cop=int(result.receipt["amount_cop"]),
+                    tip_pct=float(result.receipt["tip_pct"]),
+                    tip_usd=float(result.receipt["tip_usd"]),
+                    total_usd=total_usd,
+                    total_cop=total_cop,
+                    payment_rail=str(result.receipt.get("payment_rail", PAYMENT_RAIL_LABEL)),
+                    new_balance_usd=float(new_balance_usd),
+                    receipt_url=url,
+                ),
             )
             logger.info(
-                "wallet debit applied: phone=%s usd=%s new_balance=%s",
+                "wallet debit applied: phone=%s total_usd=%s new_balance=%s",
                 phone,
-                paid_usd,
+                total_usd,
                 new_balance_usd,
             )
             return
