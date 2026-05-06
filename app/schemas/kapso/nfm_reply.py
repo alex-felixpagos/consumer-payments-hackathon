@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.kapso.message import KapsoMessage
+from app.schemas.tickets import TicketDetails
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,31 @@ class NfmReply(BaseModel):
     expiration: str
     cvv: str
     amount_cents: int | None = None
+    booking_id: str | None = None
+    movie_title: str | None = None
+    theater_name: str | None = None
+    theater_address: str | None = None
+    start_time: str | None = None
+    display_time: str | None = None
+    format: str | None = None
+    currency: str | None = None
 
     model_config = ConfigDict(extra="allow")
+
+    def to_ticket_details(self) -> TicketDetails | None:
+        if not self.movie_title or not self.theater_name:
+            return None
+        return TicketDetails(
+            movie_title=self.movie_title,
+            theater_name=self.theater_name,
+            theater_address=self.theater_address,
+            start_time=self.start_time,
+            display_time=self.display_time,
+            format=self.format,
+            booking_reference=self.booking_id,
+            amount_cents=self.amount_cents,
+            currency=self.currency,
+        )
 
 
 def extract_nfm_reply(message: KapsoMessage) -> NfmReply | None:

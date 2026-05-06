@@ -132,6 +132,17 @@ def _sanitize_identifier(name: str) -> str:
     return cleaned
 
 
+def _extract_function_response(part: Any) -> tuple[str | None, Any]:
+    function_response = getattr(part, "function_response", None)
+    if not function_response:
+        return None, None
+    name = getattr(function_response, "name", None)
+    response = getattr(function_response, "response", None)
+    if isinstance(response, dict) and "result" in response and isinstance(response["result"], dict):
+        response = response["result"]
+    return name, response
+
+
 def build_llm_agent(agent: Agent, agents_map: dict[str, Agent], visited: set[str]) -> Any:
     """Recursively build an ADK LlmAgent tree. Imports are deferred so the API still
     boots if google-adk isn't installed yet (e.g. fresh clone before `pip install`)."""
@@ -271,6 +282,7 @@ async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message
     delegated_to: str | None = None
     payment_trigger: dict[str, Any] | None = None
     events_summary: list[dict[str, Any]] = []
+    showtime_results: list[dict[str, Any]] = []
     root_name = runner.agent.name
 
     async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
@@ -293,6 +305,11 @@ async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message
                 maybe_trigger = _payment_trigger_from_part(part)
                 if maybe_trigger:
                     payment_trigger = maybe_trigger
+                tool_name, tool_response = _extract_function_response(part)
+                if tool_name == "movie_showtimes" and isinstance(tool_response, dict):
+                    results = tool_response.get("results")
+                    if isinstance(results, list):
+                        showtime_results = [item for item in results if isinstance(item, dict)]
 
     marker_trigger, final_text = _extract_payment_marker(final_text)
     if marker_trigger:
@@ -305,6 +322,7 @@ async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message
         "delegated_to": delegated_to,
         "events": events_summary,
         "payment_trigger": payment_trigger,
+        "showtime_results": showtime_results,
     }
 
 

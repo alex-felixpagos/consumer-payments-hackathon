@@ -29,6 +29,12 @@ def _verify_signature(payload: bytes, signature_header: str | None, secret: str)
         return False
 
 
+def _public_base_url(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}".rstrip("/")
+
+
 @router.get("")
 @router.get("/{agent_name}")
 async def verify_webhook(
@@ -85,7 +91,7 @@ async def receive_webhook(request: Request) -> dict[str, str]:
         return {"status": "received", "note": "kapso not configured; set .env"}
 
     try:
-        await handle_inbound(msg, client)
+        await handle_inbound(msg, client, public_base_url=_public_base_url(request))
     except Exception:
         logger.exception("handle_inbound failed")
         # Still acknowledge to avoid provider retry storms; log and optionally notify.
@@ -139,7 +145,7 @@ async def receive_agent_webhook(agent_name: str, request: Request) -> dict[str, 
         return {"status": "received", "agent": agent_name, "note": "kapso not configured; set .env"}
 
     try:
-        await handle_agent_inbound(agent_name, msg, client)
+        await handle_agent_inbound(agent_name, msg, client, public_base_url=_public_base_url(request))
     except Exception:
         logger.exception("handle_agent_inbound failed for agent=%s", agent_name)
         # Still acknowledge to avoid provider retry storms; log and optionally notify.

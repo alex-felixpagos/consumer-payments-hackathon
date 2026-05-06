@@ -15,6 +15,38 @@
         "amount_cents": {
           "type": "number",
           "__example__": 100
+        },
+        "booking_id": {
+          "type": "string",
+          "__example__": "book_demo"
+        },
+        "movie_title": {
+          "type": "string",
+          "__example__": "Dune: Part Two"
+        },
+        "theater_name": {
+          "type": "string",
+          "__example__": "Cine Colombia Andino"
+        },
+        "theater_address": {
+          "type": "string",
+          "__example__": "Cra. 11 #82-71, Bogota"
+        },
+        "start_time": {
+          "type": "string",
+          "__example__": "2026-05-06T19:05:00"
+        },
+        "display_time": {
+          "type": "string",
+          "__example__": "7:05 PM"
+        },
+        "format": {
+          "type": "string",
+          "__example__": "IMAX"
+        },
+        "currency": {
+          "type": "string",
+          "__example__": "usd"
         }
       },
       "layout": {
@@ -27,6 +59,14 @@
           {
             "type": "TextSubheading",
             "text": "Enter your card to complete payment"
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.movie_title}"
+          },
+          {
+            "type": "TextCaption",
+            "text": "${data.theater_name} ${data.display_time}"
           },
           {
             "type": "TextInput",
@@ -58,7 +98,15 @@
                 "card_number": "${form.card_number}",
                 "expiration": "${form.expiration}",
                 "cvv": "${form.cvv}",
-                "amount_cents": "${data.amount_cents}"
+                "amount_cents": "${data.amount_cents}",
+                "booking_id": "${data.booking_id}",
+                "movie_title": "${data.movie_title}",
+                "theater_name": "${data.theater_name}",
+                "theater_address": "${data.theater_address}",
+                "start_time": "${data.start_time}",
+                "display_time": "${data.display_time}",
+                "format": "${data.format}",
+                "currency": "${data.currency}"
               }
             }
           }

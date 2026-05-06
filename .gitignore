@@ -14,3 +14,6 @@ config/kapso-key
 config/sessions.json
 config/conversation_history.json
 config/payments.json
+config/pending_bookings.json
+config/showtime_selections.json
+media/tickets/*.png

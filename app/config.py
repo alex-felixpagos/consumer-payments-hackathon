@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     port: int = Field(default=8080, alias="PORT")
+    public_base_url: str = Field(default="", alias="PUBLIC_BASE_URL")
 
     kapso_api_key: str = Field(default="", alias="KAPSO_API_KEY")
     kapso_phone_number_id: str = Field(default="", alias="KAPSO_PHONE_NUMBER_ID")
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
     stripe_currency: str = Field(default="usd", alias="STRIPE_CURRENCY")
     public_payment_base_url: str = Field(default="http://localhost:5173", alias="PUBLIC_PAYMENT_BASE_URL")
+    ticket_default_amount_cents: int = Field(default=100, alias="TICKET_DEFAULT_AMOUNT_CENTS")
 
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
