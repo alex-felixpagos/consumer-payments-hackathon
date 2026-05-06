@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     kapso_verify_token: str = Field(default="", alias="KAPSO_VERIFY_TOKEN")
     kapso_webhook_secret: str = Field(default="", alias="KAPSO_WEBHOOK_SECRET")
 
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+
 
 @lru_cache
 def get_settings() -> Settings:
