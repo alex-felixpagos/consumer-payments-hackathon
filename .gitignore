@@ -13,3 +13,4 @@ ignore_docs/
 config/kapso-key
 config/sessions.json
 config/conversation_history.json
+config/payments.json

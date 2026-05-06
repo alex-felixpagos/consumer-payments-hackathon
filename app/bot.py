@@ -1,11 +1,4 @@
-"""
-Inbound WhatsApp handling: champeta payment demo.
-
-Three branches:
-1. nfm_reply (user submitted the payment Flow) -> charge Stripe, reply with result.
-2. text matching ``pay <amount>`` -> send the payment Flow CTA.
-3. anything else -> short help text.
-"""
+"""Inbound WhatsApp handling for payment-link demo flows."""
 
 from __future__ import annotations
 
@@ -20,15 +13,14 @@ import httpx
 from app.agents.runner import TransientAgentError, run_agent_turn
 from app.agents.store import get_agent_by_name
 from app.config import get_settings
+from app.payments import store as payment_store
 from app.schemas.kapso import KapsoMessage
-from app.schemas.kapso.nfm_reply import extract_nfm_reply
 from app.services.kapso_client import KapsoClient
-from app.services.stripe_service import charge_card
 
 logger = logging.getLogger(__name__)
 
 PAY_RE = re.compile(r"^\s*pay\s+(\d+(?:\.\d{1,2})?)\s*$", re.IGNORECASE)
-HELP_TEXT = "Send `pay <amount>` to start a test payment. Example: `pay 1`"
+HELP_TEXT = "Send `pay <amount>` to create a Stripe test payment link. Example: `pay 1`"
 
 _RECENT_MESSAGE_TTL_SECONDS = 10 * 60
 _MAX_RECENT_MESSAGE_IDS = 500
@@ -76,21 +68,6 @@ def inbound_text(msg: KapsoMessage) -> str | None:
     return None
 
 
-def _kapso_error_details(exc: httpx.HTTPError) -> str:
-    response = getattr(exc, "response", None)
-    if response is None:
-        return str(exc)
-    try:
-        error = response.json().get("error", {})
-    except ValueError:
-        return response.text
-    return (
-        error.get("error_data", {}).get("details")
-        or error.get("message")
-        or response.text
-    )
-
-
 async def _send_whatsapp_text_safely(
     client: KapsoClient,
     to: str,
@@ -100,86 +77,53 @@ async def _send_whatsapp_text_safely(
     try:
         await client.send_whatsapp_message(to, text)
     except httpx.HTTPError as exc:
-        logger.error("Could not send WhatsApp text during %s: %s", context, _kapso_error_details(exc))
+        logger.error("Could not send WhatsApp text during %s: %s", context, exc)
         return False
     return True
 
 
-def _payment_flow_error_message(details: str) -> str:
-    if "display name approval" in details.lower():
-        return (
-            "WhatsApp is blocking this sender because the phone number needs display name approval "
-            "in Meta/Kapso before messages can be sent."
-        )
-    return (
-        "I tried to open the payment Flow, but Meta rejected KAPSO_FLOW_ID. "
-        "Make sure the Flow is published and belongs to the same WhatsApp Business Account as this Kapso phone number."
-    )
-
-
-async def _handle_payment_submission(msg: KapsoMessage, client: KapsoClient) -> None:
-    reply = extract_nfm_reply(msg)
-    if reply is None:
-        await client.send_whatsapp_message(msg.phone_number, "Could not read the payment form, please try again.")
-        return
-
+async def _handle_pay_command(
+    amount: float,
+    msg: KapsoMessage,
+    client: KapsoClient,
+    *,
+    movie_title: str | None = None,
+    order_summary: str | None = None,
+) -> bool:
+    if amount <= 0:
+        amount = 1.0
     settings = get_settings()
-    amount_cents = reply.amount_cents or 100  # fallback to $1 if echo failed
-    amount_display = f"${amount_cents / 100:.2f}"
-
-    result = await charge_card(
-        card_number=reply.card_number,
-        expiration=reply.expiration,
-        cvv=reply.cvv,
-        amount_cents=amount_cents,
-        currency=settings.stripe_currency,
-    )
-    if result.success:
-        body = f"✅ Charged {amount_display} — {result.payment_intent_id}"
-    else:
-        body = f"❌ Payment failed — {result.error_message or 'unknown error'}"
-    await client.send_whatsapp_message(msg.phone_number, body)
-
-
-async def _handle_pay_command(amount: float, msg: KapsoMessage, client: KapsoClient) -> bool:
-    settings = get_settings()
-    if not settings.kapso_flow_id:
-        await _send_whatsapp_text_safely(
-            client,
-            msg.phone_number,
-            "Payment flow is not configured (KAPSO_FLOW_ID missing). Run `python -m app.services.flow_setup` first.",
-            "missing payment Flow configuration",
-        )
-        return False
-
     amount_cents = int(round(amount * 100))
     amount_display = f"${amount:.2f} {settings.stripe_currency.upper()}"
-    try:
-        await client.send_flow_message(
-            to=msg.phone_number,
-            flow_id=settings.kapso_flow_id,
-            flow_cta=f"Pay {amount_display}",
-            body_text=f"Tap below to pay {amount_display} (test mode).",
-            screen="PAYMENT",
-            initial_data={
-                "amount_display": amount_display,
-                "amount_cents": amount_cents,
-            },
-        )
-        return True
-    except httpx.HTTPStatusError as e:
-        details = _kapso_error_details(e)
-        logger.error("Payment Flow send failed for flow_id=%s: %s", settings.kapso_flow_id, details)
-        await _send_whatsapp_text_safely(
-            client,
-            msg.phone_number,
-            _payment_flow_error_message(details),
-            "payment Flow failure fallback",
-        )
-        return False
-    except httpx.HTTPError as e:
-        logger.error("Payment Flow send failed for flow_id=%s: %s", settings.kapso_flow_id, _kapso_error_details(e))
-        return False
+
+    payment = payment_store.create_payment(
+        phone_number=msg.phone_number,
+        amount_cents=amount_cents,
+        currency=settings.stripe_currency,
+        public_base_url=settings.public_payment_base_url,
+        movie_title=movie_title,
+        order_summary=order_summary,
+    )
+
+    body_parts = [
+        f"Your payment link is ready for {amount_display}.",
+    ]
+    if movie_title:
+        body_parts.append(f"Movie: {movie_title}")
+    if order_summary:
+        body_parts.append(order_summary)
+    body_parts.extend(
+        [
+            f"Pay here: {payment.payment_url}",
+            "For Stripe test mode, you can use card 4242 4242 4242 4242 with any future expiry and CVC.",
+        ]
+    )
+    return await _send_whatsapp_text_safely(
+        client,
+        msg.phone_number,
+        "\n\n".join(body_parts),
+        "payment link send",
+    )
 
 
 def _payment_trigger_amount(payment_trigger: Any) -> float:
@@ -197,10 +141,6 @@ def _payment_trigger_amount(payment_trigger: Any) -> float:
 
 async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     """Called for each inbound message after webhook verification."""
-    if msg.interactive and msg.interactive.get("type") == "nfm_reply":
-        await _handle_payment_submission(msg, client)
-        return
-
     text = inbound_text(msg) or ""
     pay_match = PAY_RE.match(text)
     if pay_match:
@@ -217,7 +157,7 @@ async def handle_agent_inbound(agent_name: str, msg: KapsoMessage, client: Kapso
         return
 
     text = inbound_text(msg) or ""
-    if (msg.interactive and msg.interactive.get("type") == "nfm_reply") or PAY_RE.match(text):
+    if PAY_RE.match(text):
         await handle_inbound(msg, client)
         return
 
@@ -268,4 +208,10 @@ async def handle_agent_inbound(agent_name: str, msg: KapsoMessage, client: Kapso
         await _send_whatsapp_text_safely(client, msg.phone_number, reply_text, "agent reply")
 
     if payment_trigger:
-        await _handle_pay_command(_payment_trigger_amount(payment_trigger), msg, client)
+        await _handle_pay_command(
+            _payment_trigger_amount(payment_trigger),
+            msg,
+            client,
+            movie_title=payment_trigger.get("movie_title"),
+            order_summary=payment_trigger.get("order_summary"),
+        )

@@ -118,11 +118,10 @@ After the user picks a cinema and showtime:
 After seats are confirmed:
 
 1. Send the order summary in chat: movie, cinema, showtime, seats, number of tickets, total in COP.
-2. Send a single message with a "Pay $X COP" button that opens the WhatsApp Flow for card input.
-3. The Flow captures the card details (cardholder name, card number, expiry, CVV) and sends them encrypted to the payment backend. Never ask for or repeat card data in the chat.
-4. After successful payment, the Flow shows a confirmation screen and the e-ticket is sent to this chat automatically.
-5. If payment fails, tell the user clearly what happened in one message and re-send the Flow button so they can retry. Never lose the seat hold during a payment retry within the hold window.
-6. If the user is on WhatsApp Web (Flow not supported), send a secure Wompi payment link instead of the Flow button.
+2. Create a secure payment link and send it in chat.
+3. The payment page captures the card details and sends them to the backend for Stripe test-mode charging. Never ask for or repeat card data in the chat.
+4. After successful payment, the payment page shows a confirmation screen and the e-ticket is sent to this chat automatically.
+5. If payment fails, tell the user clearly what happened in one message and send the same payment link so they can retry. Never lose the seat hold during a payment retry within the hold window.
 
 ---
 

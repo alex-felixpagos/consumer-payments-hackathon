@@ -1,7 +1,8 @@
-const BASE = '/api/agents'
+const AGENTS_BASE = '/api/agents'
+const API_BASE = '/api'
 
-async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+async function request(base, path, options = {}) {
+  const res = await fetch(`${base}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
@@ -20,12 +21,21 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  listAgents: () => request(''),
+  listAgents: () => request(AGENTS_BASE, ''),
   createAgent: (payload) =>
-    request('', { method: 'POST', body: JSON.stringify(payload) }),
+    request(AGENTS_BASE, '', { method: 'POST', body: JSON.stringify(payload) }),
   updateAgent: (id, payload) =>
-    request(`/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-  deleteAgent: (id) => request(`/${id}`, { method: 'DELETE' }),
-  listModels: () => request('/models'),
-  listConversations: () => request('/conversations'),
+    request(AGENTS_BASE, `/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteAgent: (id) => request(AGENTS_BASE, `/${id}`, { method: 'DELETE' }),
+  listModels: () => request(AGENTS_BASE, '/models'),
+  listConversations: () => request(AGENTS_BASE, '/conversations'),
+}
+
+export const paymentsApi = {
+  getPayment: (id) => request(API_BASE, `/payments/${id}`),
+  submitPayment: (id, payload) =>
+    request(API_BASE, `/payments/${id}/pay`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 }

@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import AgentForm from './AgentForm.jsx'
+import PaymentPage from './PaymentPage.jsx'
 
 export default function App() {
+  const paymentMatch = window.location.pathname.match(/^\/pay\/([^/]+)/)
+  if (paymentMatch) {
+    return <PaymentPage paymentId={decodeURIComponent(paymentMatch[1])} />
+  }
+
+  return <AgentBuilder />
+}
+
+function AgentBuilder() {
   const [agents, setAgents] = useState([])
   const [models, setModels] = useState([])
   const [conversations, setConversations] = useState([])

@@ -1,4 +1,4 @@
-"""Agent-facing tool for starting the existing WhatsApp payment Flow."""
+"""Agent-facing tool for creating a Stripe payment link."""
 
 from __future__ import annotations
 
@@ -10,26 +10,26 @@ def start_payment_flow(
     movie_title: str | None = None,
     order_summary: str | None = None,
 ) -> dict[str, Any]:
-    """Trigger the same WhatsApp payment Flow that the user can start with "pay 1".
+    """Trigger the same Stripe payment link that the user can start with "pay 1".
 
     Use this tool only when the user has selected the movie/order and the next
-    step is payment. The server sends the actual WhatsApp Flow after the agent
-    response, using the amount returned here.
+    step is payment. The server creates the payment record and sends the link
+    after the agent response, using the amount returned here.
     """
     if amount <= 0:
         amount = 1.0
 
     amount_cents = int(round(amount * 100))
-    marker = f"[[PAYMENT_FLOW amount={amount:.2f}]]"
+    marker = f"[[PAYMENT_LINK amount={amount:.2f}]]"
     return {
-        "type": "payment_flow_trigger",
+        "type": "payment_link_trigger",
         "amount": amount,
         "amount_cents": amount_cents,
         "movie_title": movie_title,
         "order_summary": order_summary,
         "final_response_marker": marker,
         "instruction": (
-            "Tell the user payment is ready and that they should tap the payment button. "
-            f"Place this marker on its own final line so the server can open the Flow: {marker}"
+            "Tell the user payment is ready and that you will send a secure payment link. "
+            f"Place this marker on its own final line so the server can create the link: {marker}"
         ),
     }

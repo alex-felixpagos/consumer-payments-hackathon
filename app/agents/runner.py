@@ -95,18 +95,18 @@ _GEMINI_FALLBACK_ERRORS = (
     ServiceUnavailableError,
     Timeout,
 )
-_PAYMENT_FLOW_MARKER_RE = re.compile(
-    r"\[\[PAYMENT_FLOW\s+amount=(?P<amount>\d+(?:\.\d{1,2})?)\]\]",
+_PAYMENT_LINK_MARKER_RE = re.compile(
+    r"\[\[PAYMENT_(?:FLOW|LINK)\s+amount=(?P<amount>\d+(?:\.\d{1,2})?)\]\]",
     re.IGNORECASE,
 )
 _PAYMENT_FLOW_TOOL_INSTRUCTION = """
 
-Payment Flow tool
+Payment link tool
 - When the user has selected the movie/order and the next step is payment, call `start_payment_flow`.
 - Use amount 1.00 unless the exact payable total is known.
-- After calling the tool, write a short confirmation or order summary and tell the user to tap the payment button.
+- After calling the tool, write a short confirmation or order summary and tell the user you are sending a secure payment link.
 - Do not ask the user to type "pay 1".
-- Put the tool's `final_response_marker` on its own final line. The server strips it and sends the WhatsApp Flow.
+- Put the tool's `final_response_marker` on its own final line. The server strips it and sends the payment link.
 """
 
 
@@ -198,7 +198,11 @@ def _normalize_payment_trigger(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
 
-    if value.get("type") == "payment_flow_trigger" or value.get("trigger_payment_flow") is True:
+    if (
+        value.get("type") in {"payment_flow_trigger", "payment_link_trigger"}
+        or value.get("trigger_payment_flow") is True
+        or value.get("trigger_payment_link") is True
+    ):
         amount_raw = value.get("amount")
         try:
             if amount_raw is None and value.get("amount_cents") is not None:
@@ -240,7 +244,7 @@ def _payment_trigger_from_part(part: Any) -> dict[str, Any] | None:
 
 
 def _extract_payment_marker(text: str) -> tuple[dict[str, Any] | None, str]:
-    match = _PAYMENT_FLOW_MARKER_RE.search(text)
+    match = _PAYMENT_LINK_MARKER_RE.search(text)
     if not match:
         return None, text
 
@@ -248,7 +252,7 @@ def _extract_payment_marker(text: str) -> tuple[dict[str, Any] | None, str]:
         amount = float(match.group("amount"))
     except (TypeError, ValueError):
         amount = 1.0
-    cleaned = _PAYMENT_FLOW_MARKER_RE.sub("", text).strip()
+    cleaned = _PAYMENT_LINK_MARKER_RE.sub("", text).strip()
     return {
         "amount": amount,
         "amount_cents": int(round(amount * 100)),
@@ -294,7 +298,7 @@ async def _drive_runner(runner: Any, user_id: str, session_id: str, user_message
     if marker_trigger:
         payment_trigger = payment_trigger or marker_trigger
     if payment_trigger:
-        events_summary.append({"type": "payment_flow_trigger", **payment_trigger})
+        events_summary.append({"type": "payment_link_trigger", **payment_trigger})
 
     return {
         "response": final_text,

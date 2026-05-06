@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
     stripe_currency: str = Field(default="usd", alias="STRIPE_CURRENCY")
+    public_payment_base_url: str = Field(default="http://localhost:5173", alias="PUBLIC_PAYMENT_BASE_URL")
 
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
