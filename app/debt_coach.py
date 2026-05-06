@@ -8,12 +8,29 @@ Extend handlers here; keep ``handle_inbound`` in ``app/bot.py`` thin.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
 # Keyed by Kapso/WA ``from`` number (string).
 _sessions: dict[str, "UserSession"] = {}
+
+# Interactive welcome: id must stay ``begin`` so we don't treat a tap as typed ``start`` (reset).
+_BTN_BEGIN_ID: Final = "begin"
+
+
+@dataclass(frozen=True)
+class CoachOutbound:
+    """Plain text or interactive (WhatsApp reply buttons; max 3)."""
+
+    text: str
+    buttons: tuple[dict[str, str], ...] = ()
+    header: str | None = None
+    footer: str | None = None
+
+    @property
+    def has_buttons(self) -> bool:
+        return bool(self.buttons)
 
 
 class CoachStep(str, Enum):
@@ -98,7 +115,7 @@ def parse_command(text: str) -> str | None:
     if t == _CMD_DEMO_SHORTFALL or t.startswith(_CMD_DEMO_SHORTFALL + " "):
         return _CMD_DEMO_SHORTFALL
     token = t.split()[0]
-    if token in {"start", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
+    if token in {"start", "hello", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
         return token
     return None
 
@@ -147,6 +164,7 @@ def _menu_text() -> str:
     return (
         "Commands:\n"
         "• start — begin / reset\n"
+        "• hello — same warm welcome as start\n"
         "• menu — this list\n"
         "• goal — jump to amount & due date (after debt name)\n"
         "• budget — enter income & buckets\n"
@@ -157,10 +175,27 @@ def _menu_text() -> str:
     )
 
 
-def _cmd_start(session: UserSession) -> str:
+def _welcome_outbound(session: UserSession) -> CoachOutbound:
     session.reset()
     session.step = CoachStep.WAITING_DEBT_NAME
-    return "I can help you plan a debt payment. What debt are we planning for?"
+    body = (
+        "Hey — glad you're here. 💛\n\n"
+        "Money stress is *so* common, and you don't have to sort it out alone in your head. "
+        "I'm a tiny coach inside WhatsApp: we'll pick **one payment** you're aiming for, "
+        "do a **quick 3-line budget** check, and (only if you want) peek at a **simulated** "
+        "“envelope” and gentle reminders — **no real money moves here**, just clarity.\n\n"
+        "Whenever you're ready, tell me **which debt** we're planning for "
+        "(e.g. *credit card*, *car loan*). You can type it, or tap **Start** below for a nudge."
+    )
+    return CoachOutbound(
+        text=body,
+        buttons=(
+            {"id": _BTN_BEGIN_ID, "title": "Start"},
+            {"id": "menu", "title": "Menu"},
+        ),
+        header="Hi there 👋",
+        footer="Simulated demo — not financial advice.",
+    )
 
 
 def _cmd_menu(_session: UserSession) -> str:
@@ -248,8 +283,6 @@ def _cmd_demo_shortfall(session: UserSession) -> str:
 
 
 def _route_command(cmd: str, session: UserSession) -> str:
-    if cmd == "start":
-        return _cmd_start(session)
     if cmd == "menu":
         return _cmd_menu(session)
     if cmd == "goal":
@@ -270,7 +303,7 @@ def _route_command(cmd: str, session: UserSession) -> str:
 def _route_conversation(text: str, session: UserSession) -> str:
     raw = text.strip()
     if session.step == CoachStep.IDLE:
-        return "Type **start** to plan a payment, or **menu** for commands."
+        return "Type **start** or **hello** for the welcome message, or **menu** for commands."
 
     if session.step == CoachStep.WAITING_DEBT_NAME:
         session.debt_label = raw
@@ -333,15 +366,44 @@ def _route_conversation(text: str, session: UserSession) -> str:
     )
 
 
-def build_reply(phone: str, text: str | None) -> str:
+def _reply_begin_tap(session: UserSession) -> CoachOutbound | None:
+    """Handle the welcome ``Start`` button (id ``begin``) without resetting the session."""
+    if session.step != CoachStep.WAITING_DEBT_NAME or session.debt_label:
+        return None
+    return CoachOutbound(
+        text=(
+            "Love that energy. ✨\n\n"
+            "**Which debt are we focusing on first?** "
+            "Reply with a short name (for example: *Credit card* or *Car loan*)."
+        )
+    )
+
+
+def build_outbound(phone: str, text: str | None) -> CoachOutbound:
     """
-    Main entry: latest inbound text for ``phone`` → outbound body string.
+    Latest inbound ``text`` for ``phone`` → outbound payload (text and optional buttons).
     """
     if text is None or not text.strip():
-        return "Send text to continue — try: start or menu"
+        return CoachOutbound(
+            text="Send a message when you're ready — type **start**, **hello**, or **menu**, or tap a button if you see one."
+        )
 
+    raw = text.strip()
     session = get_session(phone)
-    cmd = parse_command(text)
+
+    if raw.lower() == _BTN_BEGIN_ID:
+        begin_out = _reply_begin_tap(session)
+        if begin_out:
+            return begin_out
+
+    cmd = parse_command(raw)
+    if cmd in ("start", "hello"):
+        return _welcome_outbound(session)
     if cmd:
-        return _route_command(cmd, session)
-    return _route_conversation(text, session)
+        return CoachOutbound(text=_route_command(cmd, session))
+    return CoachOutbound(text=_route_conversation(raw, session))
+
+
+def build_reply(phone: str, text: str | None) -> str:
+    """Backward-compatible: same body text as ``build_outbound`` (no button metadata)."""
+    return build_outbound(phone, text).text
