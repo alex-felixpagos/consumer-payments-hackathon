@@ -83,6 +83,8 @@ Required formatting style:
 - Use at most one emoji per section, only when it adds warmth.
 - Use labeled lines (e.g. "Tarifa Felix: $4.99") instead of tables.
 - Keep every line mobile-friendly — no line should feel like a wall of text.
+- Say each recommendation or FX-summary idea once. Do not restate the same advice \
+  in a second section, closing line, or chart caption.
 - End with exactly one clear follow-up question.
 - WhatsApp bold is *asterisks*, italic is _underscores_. Use sparingly.
 

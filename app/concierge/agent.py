@@ -11,6 +11,8 @@ collected as media attachments and returned alongside the text.
 
 import json
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,6 +74,59 @@ def _maybe_collect_media(tool_name: str, result: dict[str, Any]) -> MediaAttachm
     return MediaAttachment(url=url, caption=caption, kind="image")
 
 
+def _idea_key(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    words = re.findall(r"[a-z0-9]+", ascii_text.lower())
+    return " ".join(words)
+
+
+def _token_overlap(left: str, right: str) -> float:
+    left_tokens = set(left.split())
+    right_tokens = set(right.split())
+    if len(left_tokens) < 5 or len(right_tokens) < 5:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _dedupe_repeated_sections(text: str) -> str:
+    sections = [section.strip() for section in re.split(r"\n{2,}", text.strip()) if section.strip()]
+    kept: list[str] = []
+    seen_keys: list[str] = []
+
+    for section in sections:
+        key = _idea_key(section)
+        if not key:
+            continue
+        if key in seen_keys or any(_token_overlap(key, seen) >= 0.86 for seen in seen_keys):
+            logger.info("dropping repeated reply section: %s", section)
+            continue
+        kept.append(section)
+        seen_keys.append(key)
+
+    return "\n\n".join(kept).strip()
+
+
+def _dedupe_media(media: list[MediaAttachment]) -> list[MediaAttachment]:
+    deduped: list[MediaAttachment] = []
+    seen_urls: set[str] = set()
+    seen_captions: set[str] = set()
+
+    for attachment in media:
+        caption_key = _idea_key(attachment.caption or "")
+        if attachment.url in seen_urls or (caption_key and caption_key in seen_captions):
+            logger.info("dropping repeated media attachment: %s", attachment.url)
+            continue
+        seen_urls.add(attachment.url)
+        if caption_key:
+            seen_captions.add(caption_key)
+        # The text reply carries the advice; chart captions can otherwise repeat it
+        # as a second WhatsApp message with the same idea.
+        deduped.append(MediaAttachment(url=attachment.url, caption=None, kind=attachment.kind))
+
+    return deduped
+
+
 async def respond(user_id: str, user_text: str) -> AgentReply:
     """Run the agent for one user turn and return text + any media attachments."""
     settings = get_settings()
@@ -118,6 +173,7 @@ async def respond(user_id: str, user_text: str) -> AgentReply:
         final_text = _content_to_text(response.content)
         break
 
+    final_text = _dedupe_repeated_sections(final_text)
     if not final_text:
         final_text = system_message(locale, "agent_empty")
-    return AgentReply(text=final_text, media=media)
+    return AgentReply(text=final_text, media=_dedupe_media(media))
