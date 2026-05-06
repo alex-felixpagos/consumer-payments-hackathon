@@ -11,58 +11,48 @@
 sequenceDiagram
     actor User as User
     participant Site as Landing Page
-    participant WA as WhatsApp
     participant Kapso as Kapso API
     participant API as FastAPI bot.py
     participant Gemini as Gemini 1.5 Flash
     participant Brain as JSON Brain
 
-    User->>Site: Visits biovibe site (EN / ES / PT)
-    Site->>WA: Opens WhatsApp with pre-filled message
-    WA->>Kapso: Sends welcome trigger message
+    User->>Site: Visits site in EN / ES / PT
+    Site->>Kapso: WhatsApp deep-link with pre-filled trigger
     Kapso->>API: POST /webhooks/whatsapp
-    API->>Brain: load_brain(user_id) + save lang
-    API->>Kapso: send_media_message (hero image)
-    API->>Kapso: send_interactive_buttons (welcome + profile button)
-    Kapso->>WA: Hero image + welcome message in user's language
+    API->>Brain: load_brain + save detected lang
+    API->>Kapso: send hero image + welcome interactive message
+    Kapso->>User: Hero image + welcome in user language + profile button
 
-    alt User taps "Set up my profile"
-        WA->>Kapso: button_reply = setup_profile
-        Kapso->>API: POST /webhooks/whatsapp
-        API->>Brain: load_brain — check existing profile
-        alt Profile exists
-            API->>Kapso: send profile summary
-        else No profile yet
-            API->>Kapso: send profile setup prompt
-        end
-        Kapso->>WA: Profile info or setup guide
+    opt User taps profile button
+        Kapso->>API: button_reply = setup_profile
+        API->>Brain: load_brain - read profile
+        API->>Kapso: profile summary or setup prompt
+        Kapso->>User: Profile info or guided questions
     end
 
-    User->>Kapso: Sends text, voice note, or image
-    Note over Kapso: Transcribes audio automatically; provides image URL for images
+    User->>Kapso: Text, voice note, or image
     Kapso->>API: POST /webhooks/whatsapp
     API->>Brain: load_brain(user_id)
     Brain-->>API: profile + health_summary + log_history
-
     API->>Gemini: message + brain context
-    Note over Gemini: Classifies intent, extracts data, generates reply
+    Note over Gemini: Classify intent and extract structured data
 
     alt intent = log
-        Gemini-->>API: log + category + structured + reply
-        API->>Brain: append_log(entry)
-        Note over Brain: Every 5 logs regenerate health_summary
+        Gemini-->>API: category + structured data + reply
+        API->>Brain: append_log entry
+        API->>Brain: refresh summary every 5 logs
     else intent = query
-        Gemini-->>API: query + reply
-    else intent = unrecognized
-        Gemini-->>API: unrecognized + friendly reply
+        Gemini-->>API: answer based on history
     else intent = profile_update
-        Gemini-->>API: profile_update + name + traits + reply
-        API->>Brain: update_profile(name, traits)
+        Gemini-->>API: name + traits + reply
+        API->>Brain: update_profile
+    else intent = unrecognized
+        Gemini-->>API: friendly redirect reply
     end
 
-    API->>Kapso: send_whatsapp_message(reply)
-    API->>Kapso: send_interactive_buttons (quick-log suggestions)
-    Kapso->>WA: BioVibe reply + insight + 3 contextual quick-log buttons
+    API->>Kapso: send reply text
+    API->>Kapso: send 3 contextual quick-log buttons
+    Kapso->>User: Reply + insight + quick-log buttons
 ```
 
 ---
