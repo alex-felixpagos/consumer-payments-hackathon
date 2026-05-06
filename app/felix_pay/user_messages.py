@@ -5,15 +5,12 @@ COLD_START_HINT = (
 )
 
 VENDOR_AMOUNT_PROMPT = (
-    "How much COP do you want to send to *{vendor_name}*? Tap a quick amount below or type a number."
+    "How much would you like to send to *{vendor_name}*? Reply with an amount, e.g. *10*."
 )
 
-FX_PREVIEW = (
-    "FX preview (indicative):\n"
-    "• You send: ~{debit_fx} {from_currency}\n"
-    "• They receive: ~{amount_cop} COP\n"
-    "• Rate: 1 {from_currency} ≈ {rate_cop} COP"
-)
+INVALID_AMOUNT_HINT = "I couldn't read that amount. Try typing a number, e.g. *10*."
+
+CURRENCY_PROMPT = "Which currency are you sending?"
 
 PAYMENT_SENT = (
     "Payment confirmed. Your mock receipt is below—no real money moved in this sandbox."

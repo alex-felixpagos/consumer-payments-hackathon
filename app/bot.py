@@ -11,13 +11,16 @@ from app.config import get_settings
 from app.felix_pay import (
     PaymentSessionStatus,
     SessionStore,
-    apply_amount_from_quick_reply,
+    apply_amount_input,
+    apply_currency_choice,
     build_confirmation_preview,
     process_confirm,
     start_session_after_image_stub,
 )
 from app.felix_pay.user_messages import (
     COLD_START_HINT,
+    CURRENCY_PROMPT,
+    INVALID_AMOUNT_HINT,
     PAYMENT_CANCELLED,
     PAYMENT_SENT,
     PROCESSING_PAYMENT,
@@ -33,16 +36,20 @@ logger = logging.getLogger(__name__)
 
 _STORE = SessionStore()
 
-_AMOUNT_BUTTONS: list[dict[str, str]] = [
-    {"id": "amt_5", "title": "$5"},
-    {"id": "amt_10", "title": "$10"},
-    {"id": "amt_15", "title": "$15"},
+_CURRENCY_BUTTONS: list[dict[str, str]] = [
+    {"id": "cur_usd", "title": "🇺🇸 USD"},
+    {"id": "cur_cop", "title": "🇨🇴 COP"},
 ]
 
 _CONFIRM_BUTTONS: list[dict[str, str]] = [
     {"id": "pay_confirm", "title": "Confirm ✓"},
     {"id": "pay_cancel", "title": "Cancel ✗"},
 ]
+
+_CURRENCY_BUTTON_TO_CODE: dict[str, str] = {
+    "cur_usd": "USD",
+    "cur_cop": "COP",
+}
 
 
 def reset_felix_pay_state_for_tests() -> None:
@@ -88,7 +95,11 @@ def inbound_button_id(msg: KapsoMessage) -> str | None:
 
 async def _send_amount_prompt(client: KapsoClient, to: str, vendor_name: str) -> None:
     body = VENDOR_AMOUNT_PROMPT.format(vendor_name=vendor_name)
-    await client.send_interactive_buttons(to, body, _AMOUNT_BUTTONS)
+    await client.send_whatsapp_message(to, body)
+
+
+async def _send_currency_prompt(client: KapsoClient, to: str) -> None:
+    await client.send_interactive_buttons(to, CURRENCY_PROMPT, _CURRENCY_BUTTONS)
 
 
 async def _send_confirmation_prompt(client: KapsoClient, to: str, session_preview: str) -> None:
@@ -137,28 +148,44 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     button_id = inbound_button_id(msg)
     text_body = (inbound_text(msg) or "").strip()
 
-    # --- Awaiting USD amount choice ---
+    # --- Awaiting free-text amount ---
     if session.status == PaymentSessionStatus.AWAITING_AMOUNT:
-        if button_id and button_id.startswith("amt_"):
+        if msg.type == "text" and text_body:
             try:
-                updated = apply_amount_from_quick_reply(session, button_id)
+                updated = apply_amount_input(session, text_body)
             except ValueError:
-                await client.send_whatsapp_message(
-                    phone,
-                    "Tap *$5*, *$10*, or *$15* below to pick an amount.",
-                )
-                await _send_amount_prompt(client, phone, session.vendor_name)
+                await client.send_whatsapp_message(phone, INVALID_AMOUNT_HINT)
                 return
             _STORE.set(phone, updated)
-            preview = build_confirmation_preview(updated)
-            await _send_confirmation_prompt(client, phone, preview)
+            await _send_currency_prompt(client, phone)
             return
 
-        await client.send_whatsapp_message(
-            phone,
-            "Tap an amount below to continue.",
-        )
         await _send_amount_prompt(client, phone, session.vendor_name)
+        return
+
+    # --- Awaiting currency choice (USD / COP) ---
+    if session.status == PaymentSessionStatus.AWAITING_CURRENCY:
+        currency_code = _CURRENCY_BUTTON_TO_CODE.get(button_id or "")
+        if currency_code is None and msg.type == "text":
+            normalized = text_body.upper().strip(" $.")
+            if normalized in {"USD", "DOLLAR", "DOLLARS"}:
+                currency_code = "USD"
+            elif normalized in {"COP", "PESO", "PESOS"}:
+                currency_code = "COP"
+
+        if currency_code is None:
+            await _send_currency_prompt(client, phone)
+            return
+
+        try:
+            updated = apply_currency_choice(session, currency_code)
+        except ValueError:
+            await client.send_whatsapp_message(phone, INVALID_AMOUNT_HINT)
+            _STORE.delete(phone)
+            return
+        _STORE.set(phone, updated)
+        preview = build_confirmation_preview(updated)
+        await _send_confirmation_prompt(client, phone, preview)
         return
 
     # --- Awaiting confirm / cancel ---

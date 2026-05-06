@@ -6,13 +6,16 @@ import pytest
 
 from app.felix_pay import (
     PaymentSessionStatus,
-    apply_amount_from_quick_reply,
+    apply_amount_input,
+    apply_currency_choice,
+    build_confirmation_preview,
+    parse_amount_text,
     process_confirm,
     start_session_after_image_stub,
 )
 
 
-def test_happy_path_stub_amount_confirm_receipt() -> None:
+def test_happy_path_text_amount_usd_confirm_receipt() -> None:
     payer = "+573009998877"
     s0 = start_session_after_image_stub(payer)
     assert s0.status == PaymentSessionStatus.AWAITING_AMOUNT
@@ -20,13 +23,24 @@ def test_happy_path_stub_amount_confirm_receipt() -> None:
     assert s0.vendor_breb_key == "+573001234567"
     assert isinstance(s0.session_id, UUID)
 
-    s1 = apply_amount_from_quick_reply(s0, "amt_10")
-    assert s1.status == PaymentSessionStatus.AWAITING_CONFIRMATION
-    assert s1.amount_usd == 10.0
-    assert s1.amount_cop == 42300
-    assert s1.fx_rate == 4230.0
+    s1 = apply_amount_input(s0, "10")
+    assert s1.status == PaymentSessionStatus.AWAITING_CURRENCY
+    assert s1.amount_input == 10.0
+    assert s1.amount_usd is None and s1.amount_cop is None
 
-    result = process_confirm(s1)
+    s2 = apply_currency_choice(s1, "USD")
+    assert s2.status == PaymentSessionStatus.AWAITING_CONFIRMATION
+    assert s2.amount_usd == 10.0
+    assert s2.amount_cop == 42300
+    assert s2.fx_rate == 4230.0
+
+    preview = build_confirmation_preview(s2)
+    assert "Café El Tiempo" in preview
+    assert "$10.00 USD" in preview
+    assert "42,300 COP" in preview
+    assert "Locked for 60s" in preview
+
+    result = process_confirm(s2)
     assert result.session.status == PaymentSessionStatus.COMPLETE
     assert isinstance(result.receipt_id, UUID)
     assert result.receipt["amount_cop"] == 42300
@@ -34,7 +48,36 @@ def test_happy_path_stub_amount_confirm_receipt() -> None:
     assert result.receipt["payer_phone"] == payer
 
 
-def test_apply_amount_unknown_button_raises() -> None:
+def test_currency_choice_cop_uses_typed_value_as_cop() -> None:
+    s0 = start_session_after_image_stub("+15550001111")
+    s1 = apply_amount_input(s0, "10000")
+    s2 = apply_currency_choice(s1, "COP")
+    assert s2.amount_cop == 10000
+    assert s2.amount_usd == pytest.approx(10000 / 4230.0)
+
+
+def test_parse_amount_text_accepts_currency_decorations() -> None:
+    assert parse_amount_text("10") == 10.0
+    assert parse_amount_text("$10") == 10.0
+    assert parse_amount_text("10.50") == 10.5
+    assert parse_amount_text("USD 10") == 10.0
+    assert parse_amount_text("1,000") == 1000.0
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "abc", "$", "0", "-5"])
+def test_parse_amount_text_rejects_bad_input(bad: str) -> None:
+    with pytest.raises(ValueError):
+        parse_amount_text(bad)
+
+
+def test_apply_currency_choice_rejects_unknown_currency() -> None:
     s = start_session_after_image_stub("+15550001111")
-    with pytest.raises(ValueError, match="Unknown amount"):
-        apply_amount_from_quick_reply(s, "amt_999")
+    s = apply_amount_input(s, "10")
+    with pytest.raises(ValueError, match="Unsupported currency"):
+        apply_currency_choice(s, "EUR")
+
+
+def test_apply_currency_choice_requires_amount_first() -> None:
+    s = start_session_after_image_stub("+15550001111")
+    with pytest.raises(ValueError, match="Cannot pick currency"):
+        apply_currency_choice(s, "USD")

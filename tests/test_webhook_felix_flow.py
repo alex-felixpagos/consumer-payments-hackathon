@@ -59,7 +59,8 @@ def _kapso_meta() -> dict:
     return {"direction": "inbound", "status": "received", "processing_status": "done"}
 
 
-def test_webhook_image_confirm_creates_receipt() -> None:
+def test_webhook_image_confirm_creates_receipt(monkeypatch) -> None:
+    monkeypatch.setattr("app.bot.PROCESSING_DELAY_SECONDS", 0.0)
     reset_felix_pay_state_for_tests()
     clear_receipts_for_tests()
     phone = "+15559998888"
@@ -83,23 +84,20 @@ def test_webhook_image_confirm_creates_receipt() -> None:
             headers={"content-type": "application/json"},
         )
         assert r1.status_code == 200
-        assert len(fake.interactives) == 1
+        assert any("How much" in t[1] for t in fake.texts)
 
         r2 = client.post(
             "/webhooks/whatsapp",
             content=json.dumps(
                 _webhook_body(
                     phone,
-                    _msg(
-                        "2",
-                        "interactive",
-                        interactive={"button_reply": {"id": "amt_10", "title": "$10"}},
-                    ),
+                    _msg("2", "text", text={"body": "10"}),
                 )
             ),
             headers={"content-type": "application/json"},
         )
         assert r2.status_code == 200
+        assert len(fake.interactives) == 1
 
         r3 = client.post(
             "/webhooks/whatsapp",
@@ -109,13 +107,29 @@ def test_webhook_image_confirm_creates_receipt() -> None:
                     _msg(
                         "3",
                         "interactive",
-                        interactive={"button_reply": {"id": "pay_confirm", "title": "Confirm ✓"}},
+                        interactive={"button_reply": {"id": "cur_usd", "title": "🇺🇸 USD"}},
                     ),
                 )
             ),
             headers={"content-type": "application/json"},
         )
         assert r3.status_code == 200
+
+        r4 = client.post(
+            "/webhooks/whatsapp",
+            content=json.dumps(
+                _webhook_body(
+                    phone,
+                    _msg(
+                        "4",
+                        "interactive",
+                        interactive={"button_reply": {"id": "pay_confirm", "title": "Confirm ✓"}},
+                    ),
+                )
+            ),
+            headers={"content-type": "application/json"},
+        )
+        assert r4.status_code == 200
 
     assert any("/r/" in t[1] for t in fake.texts)
     rid = next(t[1] for t in fake.texts if "/r/" in t[1]).split("/r/")[-1].strip().split()[0]

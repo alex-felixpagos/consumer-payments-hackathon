@@ -12,6 +12,7 @@ class PaymentSessionStatus(StrEnum):
     """Allowed payment session lifecycle states."""
 
     AWAITING_AMOUNT = "AWAITING_AMOUNT"
+    AWAITING_CURRENCY = "AWAITING_CURRENCY"
     AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
     PROCESSING = "PROCESSING"
     COMPLETE = "COMPLETE"
@@ -25,6 +26,7 @@ class PaymentSession:
     vendor_breb_key: str
     vendor_name: str
     vendor_phone: str | None
+    amount_input: float | None
     amount_usd: float | None
     amount_cop: int | None
     fx_rate: float | None

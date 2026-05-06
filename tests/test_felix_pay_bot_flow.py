@@ -80,7 +80,9 @@ def _reset_state() -> None:
     clear_receipts_for_tests()
 
 
-def test_handle_inbound_happy_path_image_to_receipt() -> None:
+def test_handle_inbound_happy_path_image_to_receipt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.bot.PROCESSING_DELAY_SECONDS", 0.0)
+
     async def _run() -> None:
         fake = _FakeKapso()
         phone = "+15550001111"
@@ -89,31 +91,42 @@ def test_handle_inbound_happy_path_image_to_receipt() -> None:
             _msg(msg_id="1", msg_type="image", from_number=phone, image={"id": "mid"}),
             fake,  # type: ignore[arg-type]
         )
-        assert len(fake.interactives) == 1
-        assert "$5" in str(fake.interactives[0][2])
+        assert len(fake.texts) == 1
+        assert "How much" in fake.texts[0][1]
 
         await handle_inbound(
-            _msg(
-                msg_id="2",
-                msg_type="interactive",
-                from_number=phone,
-                interactive={"button_reply": {"id": "amt_10", "title": "$10"}},
-            ),
+            _msg(msg_id="2", msg_type="text", from_number=phone, text="10"),
             fake,  # type: ignore[arg-type]
         )
-        assert len(fake.interactives) == 2
-        assert "42,300" in fake.interactives[1][1] or "42300" in fake.interactives[1][1]
+        assert len(fake.interactives) == 1
+        currency_buttons = fake.interactives[0][2]
+        assert any(btn["id"] == "cur_usd" for btn in currency_buttons)
 
         await handle_inbound(
             _msg(
                 msg_id="3",
                 msg_type="interactive",
                 from_number=phone,
+                interactive={"button_reply": {"id": "cur_usd", "title": "🇺🇸 USD"}},
+            ),
+            fake,  # type: ignore[arg-type]
+        )
+        assert len(fake.interactives) == 2
+        preview_body = fake.interactives[1][1]
+        assert "42,300 COP" in preview_body
+        assert "$10.00 USD" in preview_body
+        assert "Locked for 60s" in preview_body
+
+        await handle_inbound(
+            _msg(
+                msg_id="4",
+                msg_type="interactive",
+                from_number=phone,
                 interactive={"button_reply": {"id": "pay_confirm", "title": "Confirm ✓"}},
             ),
             fake,  # type: ignore[arg-type]
         )
-        assert any("http" in t[1] for t in fake.texts)
+        assert any("Processing payment" in t[1] for t in fake.texts)
         receipt_line = next(t[1] for t in fake.texts if "/r/" in t[1])
         rid = receipt_line.split("/r/")[-1].strip().split()[0]
         row = get_receipt(rid)
@@ -124,6 +137,24 @@ def test_handle_inbound_happy_path_image_to_receipt() -> None:
         html = client.get(f"/r/{rid}")
         assert html.status_code == 200
         assert b"Receipt" in html.content
+
+    asyncio.run(_run())
+
+
+def test_invalid_amount_text_reprompts() -> None:
+    async def _run() -> None:
+        fake = _FakeKapso()
+        phone = "+15550005555"
+        await handle_inbound(
+            _msg(msg_id="1", msg_type="image", from_number=phone, image={"id": "x"}),
+            fake,  # type: ignore[arg-type]
+        )
+        await handle_inbound(
+            _msg(msg_id="2", msg_type="text", from_number=phone, text="abc"),
+            fake,  # type: ignore[arg-type]
+        )
+        assert any("couldn't read" in t[1] for t in fake.texts)
+        assert len(fake.interactives) == 0
 
     asyncio.run(_run())
 
@@ -151,15 +182,10 @@ def test_hola_resets_mid_flow() -> None:
             fake,  # type: ignore[arg-type]
         )
         await handle_inbound(
-            _msg(
-                msg_id="2",
-                msg_type="interactive",
-                from_number=phone,
-                interactive={"button_reply": {"id": "amt_10", "title": "$10"}},
-            ),
+            _msg(msg_id="2", msg_type="text", from_number=phone, text="10"),
             fake,  # type: ignore[arg-type]
         )
-        assert len(fake.interactives) == 2
+        assert len(fake.interactives) == 1
 
         await handle_inbound(
             _msg(msg_id="3", msg_type="text", from_number=phone, text="Hola!"),
