@@ -236,7 +236,12 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         result = await gemini.process_message(text or "", msg.type, brain)
     intent = result.get("intent", "unrecognized")
 
-    logger.info("GEMINI | intent=%s category=%s", intent, result.get("category"))
+    logger.info(
+        "GEMINI | intent=%s category=%s lang=%s",
+        intent,
+        result.get("category"),
+        result.get("detected_language", "?"),
+    )
 
     # Always save profile info if present, regardless of intent
     pu = result.get("profile_update") or {}
