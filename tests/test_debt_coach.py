@@ -20,6 +20,11 @@ def test_parse_command_exact() -> None:
     assert dc.parse_command("demo shortfall") == "demo shortfall"
 
 
+def test_parse_command_natural_shortfall_phrase() -> None:
+    assert dc.parse_command("I can't cover principal") == "help principal"
+    assert dc.parse_command("Can you help with principal?") == "help principal"
+
+
 def test_parse_budget_triple() -> None:
     t = dc.parse_budget_triple("Income 3000, essentials 1800, flexible 500")
     assert t == (3000.0, 1800.0, 500.0)
@@ -52,3 +57,17 @@ def test_help_principal_demo_shortfall() -> None:
     assert "120" in out
     assert "general options" in out.lower()
     assert "lender terms" in out.lower()
+
+
+def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
+    phone = "+10000000003"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+    dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
+    dc.build_reply(phone, "demo shortfall")
+
+    out = dc.build_reply(phone, "I can't cover principal")
+
+    assert "120" in out
+    assert "general options" in out.lower()

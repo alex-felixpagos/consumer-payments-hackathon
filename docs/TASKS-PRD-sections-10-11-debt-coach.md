@@ -21,18 +21,18 @@
 - [ ] **A1.** Crear un diccionario global **en memoria**, por ejemplo `_sessions: dict[str, UserSession]` donde la clave es `msg.phone_number` (mismo string que usa Kapso al enviar).
 - [ ] **A2.** Definir un `@dataclass` (o `TypedDict`) `UserSession` con campos mínimos: `step` (enum o string), `debt_label`, `payment_amount`, `due_date`, `income`, `essentials`, `flexible`, flags opcionales (`envelope_created`, etc.).
 - [ ] **A3.** Función `get_session(phone: str) -> UserSession` que devuelva sesión nueva si no existe.
-- [ ] **A4.** Normalizar texto entrante: `strip()`, comparación de comandos en **minúsculas** (`text.lower()`), y detección de frases para shortfall (p. ej. `can't cover principal`, `help principal`).
+- [x] **A4.** Normalizar texto entrante: `strip()`, comparación de comandos en **minúsculas** (`text.lower()`), y detección de frases para shortfall (p. ej. `can't cover principal`, `help principal`).
 
 ### B. Router de comandos (§10)
 
-- [ ] **B1.** Si el mensaje coincide con un **comando explícito** (`start`, `menu`, `goal`, `budget`, `envelope`, `reminder`, `help principal`), ejecutar su manejador **antes** del modo guiado por pasos (o definir regla clara: comandos siempre ganan vs. solo cuando `step == IDLE`).
-- [ ] **B2.** `start`: reiniciar o inicializar sesión; primera respuesta del PRD: *“I can help you plan a debt payment. What debt are we planning for?”*; `step` → esperar nombre de deuda.
-- [ ] **B3.** `goal` (modo comando): si quieres permitir entrada compacta en una línea, parsear opcionalmente; si no, redirigir al flujo guiado igual que tras `start`.
-- [ ] **B4.** `budget`: capturar ingreso + essentials + flexible (guiado o parseo de una línea tipo demo §11).
-- [ ] **B5.** `envelope`: mostrar **sobre simulado** + **yield estimado simulado** (etiquetado “simulated / illustrative”, sin garantías).
-- [ ] **B6.** `reminder`: mensaje estilo D-1 usando datos de sesión (monto, etiqueta de deuda); sin cron.
-- [ ] **B7.** `help principal` / frase natural: respuesta shortfall PRD §8 (gap + 3 opciones + disclaimers).
-- [ ] **B8.** `menu`: listar comandos en un solo mensaje corto.
+- [x] **B1.** Si el mensaje coincide con un **comando explícito** (`start`, `menu`, `goal`, `budget`, `envelope`, `reminder`, `help principal`), ejecutar su manejador **antes** del modo guiado por pasos (o definir regla clara: comandos siempre ganan vs. solo cuando `step == IDLE`).
+- [x] **B2.** `start`: reiniciar o inicializar sesión; primera respuesta del PRD: *“I can help you plan a debt payment. What debt are we planning for?”*; `step` → esperar nombre de deuda.
+- [x] **B3.** `goal` (modo comando): si quieres permitir entrada compacta en una línea, parsear opcionalmente; si no, redirigir al flujo guiado igual que tras `start`.
+- [x] **B4.** `budget`: capturar ingreso + essentials + flexible (guiado o parseo de una línea tipo demo §11).
+- [x] **B5.** `envelope`: mostrar **sobre simulado** + **yield estimado simulado** (etiquetado “simulated / illustrative”, sin garantías).
+- [x] **B6.** `reminder`: mensaje estilo D-1 usando datos de sesión (monto, etiqueta de deuda); sin cron.
+- [x] **B7.** `help principal` / frase natural: respuesta shortfall PRD §8 (gap + 3 opciones + disclaimers).
+- [x] **B8.** `menu`: listar comandos en un solo mensaje corto.
 
 ### C. Máquina de estados para el script §11 (demo guiada)
 
@@ -193,7 +193,7 @@ Importa funciones puras desde el módulo que elijas (si la lógica vive en `debt
 - [x] **A1.** In-memory dict, e.g. `_sessions: dict[str, UserSession]` keyed by `msg.phone_number`.  
 - [x] **A2.** `UserSession` dataclass: `step`, `debt_label`, `payment_amount`, `due_date`, `income`, `essentials`, `flexible`, optional `available_for_payment_override`.  
 - [x] **A3.** `get_session(phone: str) -> UserSession`.  
-- [ ] **A4.** Normalize inbound text; detect natural phrases for shortfall (e.g. *I can't cover principal*) in addition to `help principal`.
+- [x] **A4.** Normalize inbound text; detect natural phrases for shortfall (e.g. *I can't cover principal*) in addition to `help principal`.
 
 ### B. Command router (§10)
 
@@ -294,7 +294,7 @@ For **envelope** and **shortfall**, keep variants of:
 9. Bot: envelope created in copy (or user types `envelope`)  
 10. `reminder`  
 11. Bot: simulated D-1  
-12. `demo shortfall` then `help principal` (or natural phrase once A4 exists)  
+12. `demo shortfall` then `help principal` (or a natural phrase like `I can't cover principal`)
 13. Bot: gap + 3 options + disclaimers  
 
 ---
