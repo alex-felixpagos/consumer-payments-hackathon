@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import api, health, webhooks
+from app.routers import agents, api, chat, health, webhooks
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +33,8 @@ app.add_middleware(
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhooks.router, prefix="/webhooks/whatsapp", tags=["Kapso Webhook"])
 app.include_router(api.router, prefix="/api", tags=["API"])
+app.include_router(agents.router, prefix="/api/agents", tags=["Agents"])
+app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 
 
 @app.get("/")

@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+import time
 
+from app.agents.runner import TransientAgentError, run_agent_turn
+from app.agents.store import get_agent_by_name
 from app.config import get_settings
 from app.schemas.kapso import KapsoMessage
 from app.schemas.kapso.nfm_reply import extract_nfm_reply
@@ -22,6 +26,34 @@ logger = logging.getLogger(__name__)
 
 PAY_RE = re.compile(r"^\s*pay\s+(\d+(?:\.\d{1,2})?)\s*$", re.IGNORECASE)
 HELP_TEXT = "Send `pay <amount>` to start a test payment. Example: `pay 1`"
+
+_RECENT_MESSAGE_TTL_SECONDS = 10 * 60
+_MAX_RECENT_MESSAGE_IDS = 500
+_RECENT_MESSAGE_IDS: dict[str, float] = {}
+_RECENT_MESSAGE_IDS_LOCK = threading.Lock()
+
+
+def _claim_message_once(msg: KapsoMessage) -> bool:
+    """Return False for duplicate webhook deliveries of the same Kapso message."""
+    now = time.monotonic()
+    with _RECENT_MESSAGE_IDS_LOCK:
+        expired = [
+            message_id
+            for message_id, seen_at in _RECENT_MESSAGE_IDS.items()
+            if now - seen_at > _RECENT_MESSAGE_TTL_SECONDS
+        ]
+        for message_id in expired:
+            _RECENT_MESSAGE_IDS.pop(message_id, None)
+
+        if msg.id in _RECENT_MESSAGE_IDS:
+            return False
+
+        if len(_RECENT_MESSAGE_IDS) >= _MAX_RECENT_MESSAGE_IDS:
+            oldest = min(_RECENT_MESSAGE_IDS, key=_RECENT_MESSAGE_IDS.get)
+            _RECENT_MESSAGE_IDS.pop(oldest, None)
+
+        _RECENT_MESSAGE_IDS[msg.id] = now
+        return True
 
 
 def inbound_text(msg: KapsoMessage) -> str | None:
@@ -102,3 +134,55 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         return
 
     await client.send_whatsapp_message(msg.phone_number, HELP_TEXT)
+
+
+async def handle_agent_inbound(agent_name: str, msg: KapsoMessage, client: KapsoClient) -> None:
+    """Run the named agent for an inbound WhatsApp message and reply via Kapso."""
+    if not _claim_message_once(msg):
+        logger.info("Ignoring duplicate inbound Kapso message id=%s", msg.id)
+        return
+
+    agent = get_agent_by_name(agent_name)
+    if agent is None:
+        logger.error("Inbound webhook requested unknown agent name=%s", agent_name)
+        await client.send_whatsapp_message(
+            msg.phone_number,
+            f"I couldn't find the agent '{agent_name}'. Please check the webhook URL.",
+        )
+        return
+
+    text = inbound_text(msg)
+    if not text or not text.strip():
+        await client.send_whatsapp_message(
+            msg.phone_number,
+            "I can help best with text messages right now. Send me what you'd like to do.",
+        )
+        return
+
+    try:
+        result = await run_agent_turn(
+            agent=agent,
+            phone_number=msg.phone_number,
+            user_message=text.strip(),
+        )
+    except TransientAgentError:
+        logger.warning("Agent provider is temporarily unavailable for agent=%s", agent.name)
+        await client.send_whatsapp_message(
+            msg.phone_number,
+            "My movie brain is a little slammed right now. Try me again in a minute and I'll pick it back up.",
+        )
+        return
+    except RuntimeError:
+        logger.exception("Agent runtime failed for agent=%s", agent.name)
+        await client.send_whatsapp_message(
+            msg.phone_number,
+            "I hit a setup issue while trying to answer. Please check the server logs and try again.",
+        )
+        return
+
+    reply_text = (result.get("response") or "").strip()
+    if not reply_text:
+        logger.warning("Agent %s produced empty reply for phone=%s", agent.name, msg.phone_number)
+        return
+
+    await client.send_whatsapp_message(msg.phone_number, reply_text)

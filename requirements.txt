@@ -5,3 +5,6 @@ pydantic-settings>=2.6.0
 pytest>=8.0.0
 pytest-asyncio>=0.24.0
 stripe>=10.0.0
+google-adk>=0.4.0
+litellm>=1.55.0
+anthropic>=0.40.0
