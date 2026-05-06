@@ -36,7 +36,8 @@ class CoachOutbound:
 class CoachStep(str, Enum):
     IDLE = "idle"
     WAITING_DEBT_NAME = "waiting_debt_name"
-    WAITING_AMOUNT_DUE = "waiting_amount_due"
+    WAITING_AMOUNT = "waiting_amount"
+    WAITING_DUE_DATE = "waiting_due_date"
     WAITING_BUDGET_INCOME = "waiting_budget_income"
     WAITING_BUDGET_ESSENTIALS = "waiting_budget_essentials"
     WAITING_BUDGET_FLEXIBLE = "waiting_budget_flexible"
@@ -162,7 +163,8 @@ def map_intent_label_to_command(intent: str) -> str | None:
 def should_run_intent_fallback(session: UserSession) -> bool:
     """When ``False``, skip LLM intent — user is likely sending amount/budget answers."""
     return session.step not in (
-        CoachStep.WAITING_AMOUNT_DUE,
+        CoachStep.WAITING_AMOUNT,
+        CoachStep.WAITING_DUE_DATE,
         CoachStep.WAITING_BUDGET_INCOME,
         CoachStep.WAITING_BUDGET_ESSENTIALS,
         CoachStep.WAITING_BUDGET_FLEXIBLE,
@@ -270,11 +272,24 @@ def _cmd_goal(session: UserSession) -> str:
     if not session.debt_label:
         session.step = CoachStep.WAITING_DEBT_NAME
         return "What debt are we planning for? (e.g. Credit card)"
-    session.step = CoachStep.WAITING_AMOUNT_DUE
+    session.step = CoachStep.WAITING_AMOUNT
     return (
-        f"Got it — {session.debt_label}. "
-        "How much do you need to pay and when is it due? "
-        'Reply like: "$450 due May 15"'
+        f"Got it — {session.debt_label}.\n\n"
+        f"{_prompt_amount()}"
+    )
+
+
+def _prompt_amount() -> str:
+    return (
+        "*Step 1 of 2:* How much do you need to pay? "
+        "Reply with one number (e.g. *450* or *$450*)."
+    )
+
+
+def _prompt_due_date() -> str:
+    return (
+        "*Step 2 of 2:* When is it due? "
+        "Reply with a date (e.g. *May 15* or *the 15th*)."
     )
 
 
@@ -447,17 +462,41 @@ def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
 
     if session.step == CoachStep.WAITING_DEBT_NAME:
         session.debt_label = raw
-        session.step = CoachStep.WAITING_AMOUNT_DUE
+        session.step = CoachStep.WAITING_AMOUNT
         return (
-            f"Thanks — {session.debt_label}. "
-            'How much is the payment and when is it due? Example: "$450 due May 15"'
+            f"Thanks — {session.debt_label}.\n\n"
+            f"{_prompt_amount()}"
         )
 
-    if session.step == CoachStep.WAITING_AMOUNT_DUE:
+    if session.step == CoachStep.WAITING_AMOUNT:
         amt, due = _parse_money_and_rest(raw)
-        if amt is None or not due:
-            return 'I need an amount and a due date. Try: "$450 due May 15"'
+        if amt is not None and due:
+            session.payment_amount = amt
+            session.due_date = due
+            session.income = None
+            session.essentials = None
+            session.flexible = None
+            session.step = CoachStep.WAITING_BUDGET_INCOME
+            return (
+                "Nice — got your payment details.\n\n"
+                f"{_prompt_budget_income()}"
+            )
+        if amt is None:
+            return (
+                "I didn’t catch a number. Try something like *450* or *$450*.\n\n"
+                f"{_prompt_amount()}"
+            )
         session.payment_amount = amt
+        session.step = CoachStep.WAITING_DUE_DATE
+        return _prompt_due_date()
+
+    if session.step == CoachStep.WAITING_DUE_DATE:
+        due = raw.removeprefix("due ").strip() or raw
+        if not due:
+            return (
+                "Please send a date (e.g. *May 15* or *the 15th*).\n\n"
+                f"{_prompt_due_date()}"
+            )
         session.due_date = due
         session.income = None
         session.essentials = None
