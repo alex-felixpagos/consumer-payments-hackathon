@@ -430,7 +430,6 @@ def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
         )
     )
     debt = session.debt_label or "Debt"
-    wallet_block = _wallet_message(session)
     if fits:
         tap_line = "Tap a button below, or say *reminder* or *wallet*."
         buttons = (
@@ -455,7 +454,6 @@ def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
             f"Flexible spending: ${flexible:,.2f}\n"
             f"Available for payment: ${avail:,.2f}\n\n"
             f"{fit_line}\n\n"
-            f"{wallet_block}\n\n"
             f"{tap_line}"
         ),
         buttons=buttons,
