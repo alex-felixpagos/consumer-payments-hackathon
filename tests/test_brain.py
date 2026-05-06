@@ -166,3 +166,54 @@ def test_update_summary(brain_dir):
 
     brain = load_brain("u6")
     assert brain["health_summary"] == "New summary text"
+
+
+# ---------------------------------------------------------------------------
+# update_profile
+# ---------------------------------------------------------------------------
+
+from app.services.brain import update_profile  # noqa: E402
+
+
+def test_update_profile_sets_name(brain_dir):
+    update_profile("u7", name="Rodrigo", traits=[])
+
+    brain = load_brain("u7")
+    assert brain["profile"]["name"] == "Rodrigo"
+
+
+def test_update_profile_appends_traits(brain_dir):
+    update_profile("u8", name=None, traits=["Lactose Intolerant"])
+
+    brain = load_brain("u8")
+    assert "Lactose Intolerant" in brain["profile"]["traits"]
+
+
+def test_update_profile_deduplicates_traits_case_insensitive(brain_dir):
+    update_profile("u9", name=None, traits=["Vegetarian"])
+    update_profile("u9", name=None, traits=["vegetarian"])
+
+    brain = load_brain("u9")
+    lower_traits = [t.lower() for t in brain["profile"]["traits"]]
+    assert lower_traits.count("vegetarian") == 1
+
+
+def test_update_profile_does_not_overwrite_name_with_none(brain_dir):
+    update_profile("u10", name="Rodrigo", traits=[])
+    update_profile("u10", name=None, traits=[])
+
+    brain = load_brain("u10")
+    assert brain["profile"]["name"] == "Rodrigo"
+
+
+def test_update_profile_does_not_affect_log_history(brain_dir):
+    append_log("u11", {
+        "category": "Nutrition",
+        "raw_input": "Had salad",
+        "media_type": "text",
+        "structured": {},
+    })
+    update_profile("u11", name="Rodrigo", traits=["Vegetarian"])
+
+    brain = load_brain("u11")
+    assert len(brain["log_history"]) == 1

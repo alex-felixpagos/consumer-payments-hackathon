@@ -188,3 +188,62 @@ async def test_handle_inbound_gemini_failure_does_not_crash():
         )
         with pytest.raises(Exception, match="Gemini unavailable"):
             await handle_inbound(msg, kapso)
+
+
+@pytest.mark.anyio
+async def test_handle_inbound_profile_update_saves_profile():
+    msg = make_text_message(body="My name is Rodrigo and I'm lactose intolerant")
+    kapso = _mock_kapso_client()
+
+    with (
+        patch("app.bot.load_brain", return_value=EMPTY_BRAIN),
+        patch("app.bot.append_log") as mock_append,
+        patch("app.bot.update_profile") as mock_update_profile,
+        patch("app.bot.GeminiClient") as MockGemini,
+    ):
+        MockGemini.return_value.process_message = AsyncMock(return_value={
+            "intent": "profile_update",
+            "category": None,
+            "structured": {},
+            "profile_update": {"name": "Rodrigo", "traits": ["Lactose Intolerant"]},
+            "reply": "Got it, Rodrigo! I'll remember you're lactose intolerant.",
+        })
+        await handle_inbound(msg, kapso)
+
+    mock_update_profile.assert_called_once_with(
+        msg.phone_number,
+        name="Rodrigo",
+        traits=["Lactose Intolerant"],
+    )
+    mock_append.assert_not_called()
+    kapso.send_whatsapp_message.assert_called_once_with(
+        msg.phone_number,
+        "Got it, Rodrigo! I'll remember you're lactose intolerant.",
+    )
+
+
+@pytest.mark.anyio
+async def test_handle_inbound_profile_update_does_not_trigger_summary_refresh():
+    msg = make_text_message(body="I'm vegetarian")
+    kapso = _mock_kapso_client()
+
+    with (
+        patch("app.bot.load_brain", return_value=EMPTY_BRAIN),
+        patch("app.bot.append_log") as mock_append,
+        patch("app.bot.should_refresh_summary") as mock_refresh,
+        patch("app.bot.update_summary") as mock_update_summary,
+        patch("app.bot.update_profile"),
+        patch("app.bot.GeminiClient") as MockGemini,
+    ):
+        MockGemini.return_value.process_message = AsyncMock(return_value={
+            "intent": "profile_update",
+            "category": None,
+            "structured": {},
+            "profile_update": {"name": None, "traits": ["Vegetarian"]},
+            "reply": "Got it! I'll keep in mind you're vegetarian.",
+        })
+        await handle_inbound(msg, kapso)
+
+    mock_append.assert_not_called()
+    mock_refresh.assert_not_called()
+    mock_update_summary.assert_not_called()
