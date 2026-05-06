@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     movieglu_api_url: str = Field(default="https://api-gate2.movieglu.com", alias="MOVIEGLU_API_URL")
     movieglu_timeout_seconds: float = Field(default=8.0, alias="MOVIEGLU_TIMEOUT_SECONDS")
 
+    # --- buy-ticket: Procinal cinema API + Felix's stored card ---
+    procinal_base_url: str = Field(
+        default="https://apinew.procinal.com.co", alias="PROCINAL_BASE_URL"
+    )
+    procinal_documento: str = Field(default="", alias="PROCINAL_DOCUMENTO")
+    procinal_clave: str = Field(default="", alias="PROCINAL_CLAVE")
+    procinal_email: str = Field(default="", alias="PROCINAL_EMAIL")
+    procinal_card_number: str = Field(default="", alias="PROCINAL_CARD_NUMBER")
+    procinal_card_exp_month: str = Field(default="", alias="PROCINAL_CARD_EXP_MONTH")
+    procinal_card_exp_year: str = Field(default="", alias="PROCINAL_CARD_EXP_YEAR")
+    procinal_card_cvc: str = Field(default="", alias="PROCINAL_CARD_CVC")
+
 
 @lru_cache
 def get_settings() -> Settings:
