@@ -91,11 +91,8 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             msg.phone_number,
             body_text=(
                 "Welcome to BioVibe! 🌱\n\n"
-                "I'm your AI health tracking assistant. You can:\n\n"
-                "• Log what you eat, how you feel, workouts, sleep\n"
-                "• Ask health questions and get personalized insights\n"
-                "• Build a health history over time\n\n"
-                "Want to set up your profile first for a more personalized experience?"
+                "Your AI health companion on WhatsApp. Log meals, symptoms, workouts and sleep — I'll remember everything and give you personalized insights.\n\n"
+                "Want to set up your profile for a better experience?"
             ),
             buttons=[{"id": _PROFILE_SETUP_BTN_ID, "title": "Set up my profile ✨"}],
             footer="Or just start chatting — I learn as we go!",
