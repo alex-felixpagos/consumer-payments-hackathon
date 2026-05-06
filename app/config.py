@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_fallback_model: str = Field(default="gemini/gemini-2.5-flash", alias="GEMINI_FALLBACK_MODEL")
 
+    movieglu_client: str = Field(default="", alias="MOVIEGLU_CLIENT")
+    movieglu_api_key: str = Field(default="", alias="MOVIEGLU_API_KEY")
+    movieglu_authorization: str = Field(default="", alias="MOVIEGLU_AUTHORIZATION")
+    movieglu_territory: str = Field(default="US", alias="MOVIEGLU_TERRITORY")
+    movieglu_api_version: str = Field(default="v200", alias="MOVIEGLU_API_VERSION")
+    movieglu_api_url: str = Field(default="https://api-gate2.movieglu.com", alias="MOVIEGLU_API_URL")
+    movieglu_timeout_seconds: float = Field(default=8.0, alias="MOVIEGLU_TIMEOUT_SECONDS")
+
 
 @lru_cache
 def get_settings() -> Settings:

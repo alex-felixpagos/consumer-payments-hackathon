@@ -106,6 +106,48 @@ python -m app.send_demo_message --to "+1XXXXXXXXXX"
 
 ---
 
+## Movie Showtimes Skill
+
+Use `app.skills.search_movie_showtimes` as the single high-level MovieGlu data tool for an LLM agent. The skill only retrieves, resolves, filters, ranks, and normalizes showtime data; it does not generate conversational replies, recommendations, summaries, or follow-up questions.
+
+Required live API environment variables:
+
+- `MOVIEGLU_CLIENT`
+- `MOVIEGLU_API_KEY`
+- `MOVIEGLU_AUTHORIZATION`
+- `MOVIEGLU_TERRITORY`
+- `MOVIEGLU_API_VERSION` defaults to `v200`
+- `MOVIEGLU_API_URL` defaults to `https://api-gate2.movieglu.com`
+
+Example calls:
+
+```python
+import asyncio
+from app.skills import search_movie_showtimes
+
+result = asyncio.run(search_movie_showtimes(
+    location="Flower Mound, TX",
+    genre="horror",
+    target_time="6pm",
+))
+
+result = asyncio.run(search_movie_showtimes(
+    theater_name="AMC Highland Village",
+    movie_title="Into the Spider-Verse",
+    target_time="7pm",
+))
+
+result = asyncio.run(search_movie_showtimes(
+    location="Flower Mound, TX",
+    movie_title="Dune",
+    radius_miles=10,
+))
+```
+
+The returned value is a JSON-compatible dictionary with `query_interpretation`, normalized `results`, `metadata`, `errors`, and `warnings`.
+
+---
+
 ## Run tests 🧪
 
 Light **integration** tests hit the FastAPI app in-process (`TestClient`)—no Kapso credentials or network calls required.
@@ -243,4 +285,3 @@ If you see JSON (including `{"data":[]}`), your key is valid.
 - **No WhatsApp delivery / “number not allowed”:** your phone is **not** registered as a **sandbox test recipient**, or you’re texting from a different device than the one you added.
 - **Wrong `KAPSO_PHONE_NUMBER_ID`:** you copied the ID from **production**, another project, or the wrong panel—re-copy from the **same sandbox WhatsApp** screen as the API key.
 - **Trying to use production:** pause and switch back to **sandbox** for this repo; production onboarding is a different checklist (not covered here).
-
