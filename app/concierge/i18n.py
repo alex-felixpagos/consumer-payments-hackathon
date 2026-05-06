@@ -8,7 +8,7 @@ Per-user locale is sticky (first detected wins) until the user explicitly switch
 from typing import Literal
 
 Locale = Literal["en-us", "pt-br", "es"]
-DEFAULT_LOCALE: Locale = "en-us"
+DEFAULT_LOCALE: Locale = "es"
 SUPPORTED_LOCALES: tuple[Locale, ...] = ("en-us", "pt-br", "es")
 
 
@@ -70,20 +70,8 @@ def set_locale(user_id: str, locale: Locale) -> None:
 
 
 def resolve_locale(user_id: str, user_text: str) -> Locale:
-    """
-    Pick the locale for this turn.
-
-    Rules:
-    - Explicit switch phrase always wins and is persisted.
-    - Otherwise, if no locale is set yet, try detection from this message.
-    - Otherwise, keep the user's existing locale.
-    """
-    detected = detect_locale(user_text)
-    if detected:
-        if user_id not in _LOCALE_BY_USER or _is_explicit_switch(user_text):
-            set_locale(user_id, detected)
-        return _LOCALE_BY_USER[user_id]
-    return get_locale(user_id)
+    """Always return Spanish — enforced for the hackathon demo."""
+    return "es"
 
 
 def _is_explicit_switch(text: str) -> bool:
