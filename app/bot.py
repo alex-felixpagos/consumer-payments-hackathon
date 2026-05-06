@@ -1,10 +1,10 @@
 """
 Inbound WhatsApp handling: reply to users via Kapso.
 
-Delegates copy to ``app.debt_coach.build_reply`` (state machine + commands).
+Delegates copy to ``app.debt_coach.build_response`` (state machine + commands).
 """
 
-from app.debt_coach import build_reply
+from app.debt_coach import build_response
 from app.schemas.kapso import KapsoMessage
 from app.services.kapso_client import KapsoClient
 
@@ -34,5 +34,12 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
     """
     text = inbound_text(msg)
-    body = build_reply(msg.phone_number, text)
-    await client.send_whatsapp_message(msg.phone_number, body)
+    response = build_response(msg.phone_number, text)
+    if response.buttons:
+        await client.send_interactive_buttons(
+            msg.phone_number,
+            response.body,
+            [{"id": button.id, "title": button.title} for button in response.buttons],
+        )
+        return
+    await client.send_whatsapp_message(msg.phone_number, response.body)

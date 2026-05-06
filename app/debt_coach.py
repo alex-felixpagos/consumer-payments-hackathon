@@ -61,6 +61,18 @@ class UserSession:
         return self.available_after_buckets()
 
 
+@dataclass(frozen=True)
+class ReplyButton:
+    id: str
+    title: str
+
+
+@dataclass(frozen=True)
+class CoachReply:
+    body: str
+    buttons: tuple[ReplyButton, ...] = field(default_factory=tuple)
+
+
 def get_session(phone: str) -> UserSession:
     if phone not in _sessions:
         _sessions[phone] = UserSession()
@@ -97,6 +109,8 @@ def parse_command(text: str) -> str | None:
         return _CMD_HELP_PRINCIPAL
     if t == _CMD_DEMO_SHORTFALL or t.startswith(_CMD_DEMO_SHORTFALL + " "):
         return _CMD_DEMO_SHORTFALL
+    if t in {"show reminder", "show the reminder", "show_reminder"}:
+        return "reminder"
     token = t.split()[0]
     if token in {"start", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
         return token
@@ -247,7 +261,7 @@ def _cmd_demo_shortfall(session: UserSession) -> str:
     )
 
 
-def _route_command(cmd: str, session: UserSession) -> str:
+def _route_command(cmd: str, session: UserSession) -> str | CoachReply:
     if cmd == "start":
         return _cmd_start(session)
     if cmd == "menu":
@@ -267,7 +281,7 @@ def _route_command(cmd: str, session: UserSession) -> str:
     return _menu_text()
 
 
-def _route_conversation(text: str, session: UserSession) -> str:
+def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
     raw = text.strip()
     if session.step == CoachStep.IDLE:
         return "Type **start** to plan a payment, or **menu** for commands."
@@ -309,20 +323,34 @@ def _route_conversation(text: str, session: UserSession) -> str:
         fits = avail >= goal
         session.step = CoachStep.READY
         fit_line = (
-            f"That leaves **${avail:,.2f}** for this payment vs your **${goal:,.2f}** goal — looks feasible."
+            f"Your ${goal:,.2f} goal looks feasible with ${avail:,.2f} available."
             if fits
             else (
-                f"That leaves **${avail:,.2f}** for this payment vs your **${goal:,.2f}** goal — "
-                "that’s tight; consider adjusting buckets or the goal."
+                f"You have ${avail:,.2f} available toward a ${goal:,.2f} goal. "
+                "That is tight; consider adjusting buckets or the goal."
             )
         )
         debt = session.debt_label or "Debt"
-        return (
-            f"Saved: {debt}, **${goal:,.2f}** due {session.due_date}. "
-            f"Income **${income:,.2f}**, essentials **${essentials:,.2f}**, flexible **${flexible:,.2f}**.\n"
-            f"{fit_line}\n\n"
-            "Simulated payment envelope is ready (copy only — not a real account). "
-            f"Next: type **envelope**, then **reminder**, then **{_CMD_HELP_PRINCIPAL}** if you want the shortfall ideas."
+        illustrative = round(goal * 0.001, 2)
+        return CoachReply(
+            body=(
+                "Great, your payment plan is ready.\n\n"
+                f"Debt: {debt}\n"
+                f"Due: {session.due_date}\n"
+                f"Payment goal: ${goal:,.2f}\n\n"
+                "Monthly plan:\n"
+                f"Income: ${income:,.2f}\n"
+                f"Essentials: ${essentials:,.2f}\n"
+                f"Flexible spending: ${flexible:,.2f}\n"
+                f"Available for payment: ${avail:,.2f}\n\n"
+                f"{fit_line}\n\n"
+                "Simulated envelope:\n"
+                f"${goal:,.2f} set aside for this payment.\n"
+                f"Estimated illustrative yield this month: ~${illustrative:,.2f}.\n"
+                "This is simulated only, not a real account or guaranteed return.\n\n"
+                "Next, I can show the day-before payment reminder."
+            ),
+            buttons=(ReplyButton(id="reminder", title="Show reminder"),),
         )
 
     # READY / IDLE: gentle recovery
@@ -333,15 +361,26 @@ def _route_conversation(text: str, session: UserSession) -> str:
     )
 
 
-def build_reply(phone: str, text: str | None) -> str:
+def build_response(phone: str, text: str | None) -> CoachReply:
     """
-    Main entry: latest inbound text for ``phone`` → outbound body string.
+    Main entry: latest inbound text for ``phone`` → outbound response.
     """
     if text is None or not text.strip():
-        return "Send text to continue — try: start or menu"
+        return CoachReply("Send text to continue — try: start or menu")
 
     session = get_session(phone)
     cmd = parse_command(text)
     if cmd:
-        return _route_command(cmd, session)
-    return _route_conversation(text, session)
+        routed = _route_command(cmd, session)
+    else:
+        routed = _route_conversation(text, session)
+    if isinstance(routed, CoachReply):
+        return routed
+    return CoachReply(routed)
+
+
+def build_reply(phone: str, text: str | None) -> str:
+    """
+    Compatibility helper for tests and callers that only need text.
+    """
+    return build_response(phone, text).body
