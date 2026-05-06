@@ -120,6 +120,35 @@ def parse_command(text: str) -> str | None:
     return None
 
 
+def map_intent_label_to_command(intent: str) -> str | None:
+    """
+    Map :func:`app.services.claude_client.get_intent` labels to ``parse_command`` names.
+
+    Returns ``None`` for ``unknown`` or unrecognized labels (let conversation handle text).
+    """
+    label = intent.strip().lower().strip(".\"' ")
+    if not label or label == "unknown":
+        return None
+    if label == "help_principal":
+        return _CMD_HELP_PRINCIPAL
+    if label == "demo_shortfall":
+        return _CMD_DEMO_SHORTFALL
+    if label in {"start", "menu", "goal", "budget", "envelope", "reminder"}:
+        return label
+    # Router groups greetings with ``start``; treat like ``start`` for welcome.
+    if label == "hello":
+        return "hello"
+    return None
+
+
+def should_run_intent_fallback(session: UserSession) -> bool:
+    """When ``False``, skip LLM intent — user is likely sending amount/budget answers."""
+    return session.step not in (
+        CoachStep.WAITING_AMOUNT_DUE,
+        CoachStep.WAITING_BUDGET,
+    )
+
+
 def _parse_money_and_rest(text: str) -> tuple[float | None, str | None]:
     """
     Parse a line like ``$450 due May 15`` → (450.0, "May 15").
@@ -181,11 +210,11 @@ def _welcome_outbound(session: UserSession) -> CoachOutbound:
     body = (
         "Hey — glad you're here. 💛\n\n"
         "Money stress is *so* common, and you don't have to sort it out alone in your head. "
-        "I'm a tiny coach inside WhatsApp: we'll pick **one payment** you're aiming for, "
-        "do a **quick 3-line budget** check, and (only if you want) peek at a **simulated** "
-        "“envelope” and gentle reminders — **no real money moves here**, just clarity.\n\n"
-        "Whenever you're ready, tell me **which debt** we're planning for "
-        "(e.g. *credit card*, *car loan*). You can type it, or tap **Start** below for a nudge."
+        "I'm a tiny coach inside WhatsApp: we'll pick *one payment* you're aiming for, "
+        "do a *quick budget* check, and (only if you want) peek at a *simulated* "
+        "“envelope” and gentle reminders — *no real money moves here*, just clarity.\n\n"
+        "Whenever you're ready, tell me *which debt* we're planning for "
+        "(e.g. credit card, car loan). You can type it, or tap *Start* below for a nudge."
     )
     return CoachOutbound(
         text=body,
@@ -232,7 +261,7 @@ def _cmd_envelope(session: UserSession) -> str:
     # Illustrative only (PRD demo assumptions).
     illustrative = round(amt * 0.001, 2)
     return (
-        f"Simulated payment envelope for {label}: **${amt:,.2f}** set aside (not a real account).\n"
+        f"Simulated payment envelope for {label}: *${amt:,.2f}* set aside (not a real account).\n"
         f"Illustrative simulated yield this month: ~${illustrative:,.2f} (not guaranteed)."
     )
 
@@ -244,7 +273,7 @@ def _cmd_reminder(session: UserSession) -> str:
     amt = session.payment_amount
     return (
         f"Reminder (simulated): your {label} payment is due tomorrow ({session.due_date}). "
-        f"Move **${amt:,.2f}** from your simulated envelope to your bank today so you’re ready to pay."
+        f"Move *${amt:,.2f}* from your simulated envelope to your bank today so you’re ready to pay."
     )
 
 
@@ -258,26 +287,26 @@ def _cmd_help_principal(session: UserSession) -> str:
     gap = goal - avail
     if gap <= 0:
         return (
-            f"Your payment goal is **${goal:,.2f}** and your budget leaves **${avail:,.2f}** available — "
+            f"Your payment goal is *${goal:,.2f}* and your budget leaves *${avail:,.2f}* available — "
             "no shortfall for this goal. If something changed, say budget again or use "
             f"{_CMD_DEMO_SHORTFALL} for the pitch scenario."
         )
     flex_half = round(max(session.flexible or 0, 0) / 2, 2) if session.flexible else 60.0
     return (
-        f"Your payment goal is **${goal:,.2f}**, but your budget leaves **${avail:,.2f}** available. "
-        f"You're short **${gap:,.2f}**.\n\n"
-        "Here are **three general options to consider**:\n"
+        f"Your payment goal is *${goal:,.2f}*, but your budget leaves *${avail:,.2f}* available. "
+        f"You're short *${gap:,.2f}*.\n\n"
+        "Here are *three general options to consider*:\n"
         f"1) Reduce flexible spending (e.g. by ~${flex_half:,.2f}) if that’s realistic for you.\n"
-        "2) See whether splitting extra principal is allowed under **your lender terms**.\n"
-        "3) Prioritize the **minimum payment** to reduce late-fee risk if you’re unsure.\n\n"
-        "**Check your lender terms before changing payments.** This isn’t financial advice."
+        "2) See whether splitting extra principal is allowed under *your lender terms*.\n"
+        "3) Prioritize the *minimum payment* to reduce late-fee risk if you’re unsure.\n\n"
+        "*Check your lender terms before changing payments.* This isn’t financial advice."
     )
 
 
 def _cmd_demo_shortfall(session: UserSession) -> str:
     session.available_for_payment_override = 330.0
     return (
-        "Demo mode: treating **$330** as available for this payment (override). "
+        "Demo mode: treating *$330* as available for this payment (override). "
         f"Now text: {_CMD_HELP_PRINCIPAL}"
     )
 
@@ -303,7 +332,7 @@ def _route_command(cmd: str, session: UserSession) -> str:
 def _route_conversation(text: str, session: UserSession) -> str:
     raw = text.strip()
     if session.step == CoachStep.IDLE:
-        return "Type **start** or **hello** for the welcome message, or **menu** for commands."
+        return "Type *start* or *hello* for the welcome message, or *menu* for commands."
 
     if session.step == CoachStep.WAITING_DEBT_NAME:
         session.debt_label = raw
@@ -342,20 +371,20 @@ def _route_conversation(text: str, session: UserSession) -> str:
         fits = avail >= goal
         session.step = CoachStep.READY
         fit_line = (
-            f"That leaves **${avail:,.2f}** for this payment vs your **${goal:,.2f}** goal — looks feasible."
+            f"That leaves *${avail:,.2f}* for this payment vs your *${goal:,.2f}* goal — looks feasible."
             if fits
             else (
-                f"That leaves **${avail:,.2f}** for this payment vs your **${goal:,.2f}** goal — "
+                f"That leaves *${avail:,.2f}* for this payment vs your *${goal:,.2f}* goal — "
                 "that’s tight; consider adjusting buckets or the goal."
             )
         )
         debt = session.debt_label or "Debt"
         return (
-            f"Saved: {debt}, **${goal:,.2f}** due {session.due_date}. "
-            f"Income **${income:,.2f}**, essentials **${essentials:,.2f}**, flexible **${flexible:,.2f}**.\n"
+            f"Saved: {debt}, *${goal:,.2f}* due {session.due_date}. "
+            f"Income *${income:,.2f}*, essentials *${essentials:,.2f}*, flexible *${flexible:,.2f}*.\n"
             f"{fit_line}\n\n"
             "Simulated payment envelope is ready (copy only — not a real account). "
-            f"Next: type **envelope**, then **reminder**, then **{_CMD_HELP_PRINCIPAL}** if you want the shortfall ideas."
+            f"Next: type *envelope*, then *reminder*, then *{_CMD_HELP_PRINCIPAL}* if you want the shortfall ideas."
         )
 
     # READY / IDLE: gentle recovery
@@ -373,19 +402,27 @@ def _reply_begin_tap(session: UserSession) -> CoachOutbound | None:
     return CoachOutbound(
         text=(
             "Love that energy. ✨\n\n"
-            "**Which debt are we focusing on first?** "
-            "Reply with a short name (for example: *Credit card* or *Car loan*)."
+            "*Which debt are we focusing on first?*\n"
+            "Reply with a short name (for example: Credit card or Car loan)."
         )
     )
 
 
-def build_outbound(phone: str, text: str | None) -> CoachOutbound:
+def build_outbound(
+    phone: str,
+    text: str | None,
+    *,
+    resolved_command: str | None = None,
+) -> CoachOutbound:
     """
     Latest inbound ``text`` for ``phone`` → outbound payload (text and optional buttons).
+
+    ``resolved_command``: when ``parse_command`` returned ``None``, the caller may pass
+    a command from :func:`map_intent_label_to_command` / :func:`get_intent` as a second check.
     """
     if text is None or not text.strip():
         return CoachOutbound(
-            text="Send a message when you're ready — type **start**, **hello**, or **menu**, or tap a button if you see one."
+            text="Send a message when you're ready — type *start*, *hello*, or *menu*, or tap a button if you see one."
         )
 
     raw = text.strip()
@@ -397,6 +434,8 @@ def build_outbound(phone: str, text: str | None) -> CoachOutbound:
             return begin_out
 
     cmd = parse_command(raw)
+    if cmd is None and resolved_command:
+        cmd = resolved_command
     if cmd in ("start", "hello"):
         return _welcome_outbound(session)
     if cmd:

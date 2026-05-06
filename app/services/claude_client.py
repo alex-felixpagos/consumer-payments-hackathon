@@ -22,7 +22,7 @@ import asyncio
 import httpx
 
 from app.config import get_settings
-from ideas import prompts
+from app.prompts import main as prompts
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"

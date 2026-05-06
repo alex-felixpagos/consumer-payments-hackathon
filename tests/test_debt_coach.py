@@ -12,6 +12,25 @@ def _clear_sessions() -> None:
     dc.clear_all_sessions_for_tests()
 
 
+def test_map_intent_label_to_command() -> None:
+    assert dc.map_intent_label_to_command("unknown") is None
+    assert dc.map_intent_label_to_command("") is None
+    assert dc.map_intent_label_to_command("help_principal") == "help principal"
+    assert dc.map_intent_label_to_command("demo_shortfall") == "demo shortfall"
+    assert dc.map_intent_label_to_command("envelope") == "envelope"
+
+
+def test_build_outbound_resolved_command_used_when_parse_fails() -> None:
+    phone = "+10000000008"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Card")
+    dc.build_reply(phone, "$450 due May 15")
+    dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
+    # "show my savings" is not a literal command; simulates LLM resolving to envelope.
+    out = dc.build_outbound(phone, "show my savings", resolved_command="envelope")
+    assert "simulated payment envelope" in out.text.lower()
+
+
 def test_parse_command_exact() -> None:
     assert dc.parse_command("  START ") == "start"
     assert dc.parse_command("start") == "start"

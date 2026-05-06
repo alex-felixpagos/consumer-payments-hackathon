@@ -2,11 +2,23 @@
 Inbound WhatsApp handling: reply to users via Kapso.
 
 Delegates to ``app.debt_coach.build_outbound`` (state machine + commands; welcome uses buttons).
+If ``parse_command`` does not match, optionally resolves intent via ``get_intent`` (Haiku router).
 """
 
-from app.debt_coach import build_outbound
+import logging
+
+from app.debt_coach import (
+    build_outbound,
+    get_session,
+    map_intent_label_to_command,
+    parse_command,
+    should_run_intent_fallback,
+)
 from app.schemas.kapso import KapsoMessage
+from app.services.claude_client import get_intent
 from app.services.kapso_client import KapsoClient
+
+logger = logging.getLogger(__name__)
 
 
 def inbound_text(msg: KapsoMessage) -> str | None:
@@ -38,7 +50,18 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
     """
     text = inbound_text(msg)
-    out = build_outbound(msg.phone_number, text)
+    phone = msg.phone_number
+    resolved_command: str | None = None
+    if text and text.strip():
+        raw = text.strip()
+        if parse_command(raw) is None and should_run_intent_fallback(get_session(phone)):
+            try:
+                intent_label = await get_intent(raw)
+                resolved_command = map_intent_label_to_command(intent_label)
+            except Exception as exc:
+                logger.warning("get_intent fallback skipped: %s", exc)
+
+    out = build_outbound(phone, text, resolved_command=resolved_command)
     if out.buttons:
         await client.send_interactive_buttons(
             msg.phone_number,
