@@ -15,6 +15,59 @@ from app.services.kapso_client import KapsoClient
 logger = logging.getLogger(__name__)
 
 
+def _quick_log_buttons(category: str | None, lang: str) -> list[dict[str, str]]:
+    """Return 3 context-aware quick-log buttons based on the last logged category."""
+    _LABELS: dict[str, dict[str, dict[str, str]]] = {
+        "en": {
+            "meal":    {"id": "ql_meal",    "title": "🍽️ Log a meal"},
+            "workout": {"id": "ql_workout", "title": "🏃 Just exercised"},
+            "sleep":   {"id": "ql_sleep",   "title": "😴 Log my sleep"},
+            "water":   {"id": "ql_water",   "title": "💧 Drank water"},
+            "mood":    {"id": "ql_mood",    "title": "😊 Log my mood"},
+            "symptom": {"id": "ql_symptom", "title": "🤒 Log a symptom"},
+        },
+        "es": {
+            "meal":    {"id": "ql_meal",    "title": "🍽️ Comí algo"},
+            "workout": {"id": "ql_workout", "title": "🏃 Hice ejercicio"},
+            "sleep":   {"id": "ql_sleep",   "title": "😴 Registrar sueño"},
+            "water":   {"id": "ql_water",   "title": "💧 Tomé agua"},
+            "mood":    {"id": "ql_mood",    "title": "😊 Mi estado"},
+            "symptom": {"id": "ql_symptom", "title": "🤒 Tengo síntoma"},
+        },
+        "pt": {
+            "meal":    {"id": "ql_meal",    "title": "🍽️ Fiz refeição"},
+            "workout": {"id": "ql_workout", "title": "🏃 Me exercitei"},
+            "sleep":   {"id": "ql_sleep",   "title": "😴 Registrar sono"},
+            "water":   {"id": "ql_water",   "title": "💧 Bebi água"},
+            "mood":    {"id": "ql_mood",    "title": "😊 Meu humor"},
+            "symptom": {"id": "ql_symptom", "title": "🤒 Tenho sintoma"},
+        },
+    }
+    _NEXT: dict[str, list[str]] = {
+        "Nutrition": ["workout", "sleep", "water"],
+        "Activity":  ["meal",    "sleep", "mood"],
+        "Sleep":     ["mood",    "meal",  "workout"],
+        "Symptom":   ["meal",    "mood",  "workout"],
+        "Mood":      ["meal",    "workout", "sleep"],
+    }
+    labels = _LABELS.get(lang, _LABELS["en"])
+    keys = _NEXT.get(category or "", ["meal", "workout", "sleep"])
+    return [labels[k] for k in keys]
+
+
+_QUICK_LOG_FOOTER = {
+    "en": "Tap to log quickly 👆",
+    "es": "Toca para registrar 👆",
+    "pt": "Toque para registrar 👆",
+}
+
+_QUICK_LOG_BODY = {
+    "en": "What's next? 🌱",
+    "es": "¿Qué sigue? 🌱",
+    "pt": "O que vem a seguir? 🌱",
+}
+
+
 def inbound_text(msg: KapsoMessage) -> str | None:
     """Best-effort text or button title from an inbound Kapso/WA message."""
     if msg.type == "text" and msg.text:
@@ -269,5 +322,19 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             logger.info("BRAIN | summary refreshed for user=%s", user_id)
 
     reply = result.get("reply", "")
+    lang = result.get("detected_language", brain.get("lang", "en"))
     logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, reply)
     await client.send_whatsapp_message(msg.phone_number, reply)
+
+    # Send contextual quick-log buttons after every log or query
+    if intent in ("log", "query"):
+        buttons = _quick_log_buttons(result.get("category"), lang)
+        try:
+            await client.send_interactive_buttons(
+                msg.phone_number,
+                body_text=_QUICK_LOG_BODY.get(lang, _QUICK_LOG_BODY["en"]),
+                buttons=buttons,
+                footer=_QUICK_LOG_FOOTER.get(lang, _QUICK_LOG_FOOTER["en"]),
+            )
+        except Exception:
+            logger.warning("Could not send quick-log buttons")
