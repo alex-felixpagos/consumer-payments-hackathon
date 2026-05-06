@@ -8,6 +8,7 @@ Default demo replies with a fixed template that quotes what they sent. Replace
 import logging
 
 from app.schemas.kapso import KapsoMessage
+from app.services.brain import load_brain
 from app.services.kapso_client import KapsoClient
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
 
     ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
     """
+    user_id = msg.phone_number
     text = inbound_text(msg)
 
     logger.info(
@@ -53,6 +55,9 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         msg.type,
         text or f"<{msg.type} — no text extracted>",
     )
+
+    brain = load_brain(user_id)
+    logger.info("BRAIN | user=%s log_entries=%d", user_id, len(brain["log_history"]))
 
     body = _reply_body_for_demo(text, msg.type)
 
