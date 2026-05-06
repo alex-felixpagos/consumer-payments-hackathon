@@ -71,24 +71,28 @@ async def receive_webhook(request: Request) -> dict[str, str]:
 
     logger.info("Webhook received: %s", json.dumps(payload)[:2000])
 
-    # Kapso may wrap message events in {"type": "...", "data": {...}} or send the
-    # v2 flat shape directly. Unwrap event envelopes when present and only act on
-    # message-received events; ignore everything else.
+    # Kapso wraps message events in an envelope: {"type": "...", "data": ...}
+    # `data` may be a single object OR (when batching is on) a list of objects.
+    # Only act on `whatsapp.message.received`; ignore sent/delivered/read/etc. so
+    # we don't reply to our own outbound messages.
     event_type = payload.get("type") or payload.get("event")
-    body = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-
-    if event_type and "message.received" not in event_type and "message" not in event_type:
+    if event_type and not event_type.endswith("message.received"):
         return {"status": "ignored", "event": event_type}
 
-    try:
-        webhook = KapsoWebhook.model_validate(body)
-    except Exception as e:
-        logger.warning("Webhook payload did not match KapsoWebhook schema: %s", e)
-        return {"status": "ignored", "reason": "schema_mismatch"}
+    raw_data = payload.get("data", payload)
+    items = raw_data if isinstance(raw_data, list) else [raw_data]
 
-    msg = webhook.message
-    if msg.direction != "inbound":
-        return {"status": "ignored", "reason": "not_inbound"}
+    webhooks: list[KapsoWebhook] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            webhooks.append(KapsoWebhook.model_validate(item))
+        except Exception as e:
+            logger.warning("Skipping item that did not match KapsoWebhook schema: %s", e)
+
+    if not webhooks:
+        return {"status": "ignored", "reason": "no_valid_messages"}
 
     try:
         client = KapsoClient()
@@ -96,12 +100,18 @@ async def receive_webhook(request: Request) -> dict[str, str]:
         logger.error("Kapso client not configured: %s", e)
         return {"status": "received", "note": "kapso not configured; set .env"}
 
-    try:
-        await handle_inbound(msg, client)
-    except Exception:
-        logger.exception("handle_inbound failed")
-        # Still acknowledge to avoid provider retry storms; log and optionally notify.
-    return {"status": "received"}
+    handled = 0
+    for webhook in webhooks:
+        msg = webhook.message
+        if msg.direction != "inbound":
+            continue
+        try:
+            await handle_inbound(msg, client)
+            handled += 1
+        except Exception:
+            logger.exception("handle_inbound failed")
+            # Still acknowledge to avoid provider retry storms.
+    return {"status": "received", "handled": str(handled)}
 
 
 @router.post("/debug")
