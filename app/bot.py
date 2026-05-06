@@ -8,7 +8,7 @@ Default demo replies with a fixed template that quotes what they sent. Replace
 import logging
 
 from app.schemas.kapso import KapsoMessage
-from app.services.brain import append_log, load_brain, should_refresh_summary, update_profile, update_summary
+from app.services.brain import append_log, load_brain, save_brain, should_refresh_summary, update_profile, update_summary
 from app.services.gemini_client import GeminiClient
 from app.services.kapso_client import KapsoClient
 
@@ -73,37 +73,131 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
 
     # Hero image served directly from GitHub raw content (always public, no deploy needed)
     _WELCOME_IMAGE_URL = "https://raw.githubusercontent.com/alex-felixpagos/consumer-payments-hackathon/feature/cumbia-team/web/biovibe-hero.png"
-    _WELCOME_TRIGGERS = {
-        "hey biovibe, i'm ready to start tracking my health!",
-        "hola biovibe, estoy listo para comenzar a registrar mi salud!",
-        "oi biovibe, estou pronto para começar a monitorar minha saúde!",
-    }
     _PROFILE_SETUP_BTN_ID = "setup_profile"
 
-    if text and text.strip().lower() in _WELCOME_TRIGGERS:
-        logger.info("OUTBOUND | to=%s message=<welcome image + interactive>", msg.phone_number)
+    # Map each pre-filled trigger to its language
+    _WELCOME_TRIGGER_LANG: dict[str, str] = {
+        "hey biovibe, i'm ready to start tracking my health!": "en",
+        "hola biovibe, estoy listo para comenzar a registrar mi salud!": "es",
+        "oi biovibe, estou pronto para começar a monitorar minha saúde!": "pt",
+    }
+
+    _WELCOME_COPY = {
+        "en": {
+            "image_caption": "BioVibe — AI Health Tracking on WhatsApp 🌱",
+            "body": (
+                "Welcome to BioVibe! 🌱\n\n"
+                "Your AI health companion on WhatsApp. Log meals, symptoms, workouts and sleep — "
+                "I'll remember everything and give you personalized insights.\n\n"
+                "Want to set up your profile for a better experience?"
+            ),
+            "btn_title": "Set up my profile ✨",
+            "footer": "Or just start chatting — I learn as we go!",
+            "profile_existing": (
+                "Here's your current profile 👤\n\n"
+                "{name_line}"
+                "{traits_line}"
+                "Just send me a message to update anything — I'll add it automatically! ✏️"
+            ),
+            "profile_name_line": "• *Name:* {name}\n",
+            "profile_traits_line": "• *About you:* {traits}\n\n",
+            "profile_empty": (
+                "Let's set up your profile! 👤\n\n"
+                "Feel free to share:\n\n"
+                "• Your name\n"
+                "• Dietary restrictions (vegan, lactose intolerant, gluten-free…)\n"
+                "• Allergies\n"
+                "• Health goals (lose weight, sleep better, more energy…)\n\n"
+                "Just write it naturally — I'll take care of the rest! 🧠"
+            ),
+        },
+        "es": {
+            "image_caption": "BioVibe — Seguimiento de salud con IA en WhatsApp 🌱",
+            "body": (
+                "¡Bienvenido a BioVibe! 🌱\n\n"
+                "Tu asistente de salud con IA en WhatsApp. Registra comidas, síntomas, ejercicio y sueño — "
+                "lo recordaré todo y te daré insights personalizados.\n\n"
+                "¿Quieres configurar tu perfil para una mejor experiencia?"
+            ),
+            "btn_title": "Configurar mi perfil ✨",
+            "footer": "¡O simplemente empieza a escribir — aprendo contigo!",
+            "profile_existing": (
+                "Este es tu perfil actual 👤\n\n"
+                "{name_line}"
+                "{traits_line}"
+                "¡Envíame un mensaje para actualizar cualquier dato! ✏️"
+            ),
+            "profile_name_line": "• *Nombre:* {name}\n",
+            "profile_traits_line": "• *Sobre ti:* {traits}\n\n",
+            "profile_empty": (
+                "¡Configuremos tu perfil! 👤\n\n"
+                "Puedes compartir:\n\n"
+                "• Tu nombre\n"
+                "• Restricciones alimentarias (vegano, intolerante a la lactosa, sin gluten…)\n"
+                "• Alergias\n"
+                "• Objetivos de salud (perder peso, dormir mejor, más energía…)\n\n"
+                "Escríbelo de forma natural — ¡yo me encargo del resto! 🧠"
+            ),
+        },
+        "pt": {
+            "image_caption": "BioVibe — Monitoramento de saúde com IA no WhatsApp 🌱",
+            "body": (
+                "Bem-vindo ao BioVibe! 🌱\n\n"
+                "Seu assistente de saúde com IA no WhatsApp. Registre refeições, sintomas, treinos e sono — "
+                "vou lembrar de tudo e te dar insights personalizados.\n\n"
+                "Quer configurar seu perfil para uma experiência melhor?"
+            ),
+            "btn_title": "Configurar meu perfil ✨",
+            "footer": "Ou pode começar a conversar — aprendo enquanto você usa!",
+            "profile_existing": (
+                "Seu perfil atual 👤\n\n"
+                "{name_line}"
+                "{traits_line}"
+                "Manda uma mensagem para atualizar qualquer informação! ✏️"
+            ),
+            "profile_name_line": "• *Nome:* {name}\n",
+            "profile_traits_line": "• *Sobre você:* {traits}\n\n",
+            "profile_empty": (
+                "Vamos configurar seu perfil! 👤\n\n"
+                "Pode compartilhar:\n\n"
+                "• Seu nome\n"
+                "• Restrições alimentares (vegano, intolerante a lactose, sem glúten…)\n"
+                "• Alergias\n"
+                "• Objetivos de saúde (perder peso, dormir melhor, mais energia…)\n\n"
+                "Escreva de forma natural — eu cuido do resto! 🧠"
+            ),
+        },
+    }
+
+    normalized_text = (text or "").strip().lower()
+    detected_lang = _WELCOME_TRIGGER_LANG.get(normalized_text)
+
+    if detected_lang:
+        # Persist the detected language so profile/future replies use the same language
+        lang_brain = load_brain(user_id)
+        lang_brain["lang"] = detected_lang
+        save_brain(user_id, lang_brain)
+
+        copy = _WELCOME_COPY[detected_lang]
+        logger.info("OUTBOUND | to=%s lang=%s message=<welcome>", msg.phone_number, detected_lang)
         try:
             await client.send_media_message(
                 msg.phone_number,
                 "image",
                 _WELCOME_IMAGE_URL,
-                caption="BioVibe — AI Health Tracking on WhatsApp 🌱",
+                caption=copy["image_caption"],
             )
         except Exception:
             logger.warning("Could not send welcome image; falling back to text-only")
         await client.send_interactive_buttons(
             msg.phone_number,
-            body_text=(
-                "Welcome to BioVibe! 🌱\n\n"
-                "Your AI health companion on WhatsApp. Log meals, symptoms, workouts and sleep — I'll remember everything and give you personalized insights.\n\n"
-                "Want to set up your profile for a better experience?"
-            ),
-            buttons=[{"id": _PROFILE_SETUP_BTN_ID, "title": "Set up my profile ✨"}],
-            footer="Or just start chatting — I learn as we go!",
+            body_text=copy["body"],
+            buttons=[{"id": _PROFILE_SETUP_BTN_ID, "title": copy["btn_title"]}],
+            footer=copy["footer"],
         )
         return
 
-    # Handle profile setup button tap
+    # Handle profile setup button tap — reply in the user's stored language (default EN)
     if msg.interactive:
         button_reply = msg.interactive.get("button_reply") or {}
         if button_reply.get("id") == _PROFILE_SETUP_BTN_ID:
@@ -111,29 +205,17 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             profile = existing_brain.get("profile", {})
             name = profile.get("name")
             traits = profile.get("traits") or []
+            lang = existing_brain.get("lang", "en")
+            copy = _WELCOME_COPY.get(lang, _WELCOME_COPY["en"])
 
             if name or traits:
-                # Show existing profile
-                lines = ["Here's your current profile 👤\n"]
-                if name:
-                    lines.append(f"• *Name:* {name}")
-                if traits:
-                    lines.append("• *About you:* " + ", ".join(traits))
-                lines.append("\nJust send me a message to update anything — I'll add it automatically! ✏️")
-                reply = "\n".join(lines)
+                name_line = copy["profile_name_line"].format(name=name) if name else ""
+                traits_line = copy["profile_traits_line"].format(traits=", ".join(traits)) if traits else ""
+                reply = copy["profile_existing"].format(name_line=name_line, traits_line=traits_line)
             else:
-                reply = (
-                    "Let's set up your profile! 👤\n\n"
-                    "Feel free to share:\n\n"
-                    "• Your name\n"
-                    "• Dietary restrictions (vegan, lactose intolerant, gluten-free…)\n"
-                    "• Allergies\n"
-                    "• Health goals (lose weight, sleep better, more energy…)\n"
-                    "• Any conditions I should know about\n\n"
-                    "Just write it naturally — I'll take care of the rest! 🧠"
-                )
+                reply = copy["profile_empty"]
 
-            logger.info("OUTBOUND | to=%s message=<profile setup/view>", msg.phone_number)
+            logger.info("OUTBOUND | to=%s lang=%s message=<profile setup/view>", msg.phone_number, lang)
             await client.send_whatsapp_message(msg.phone_number, reply)
             return
 
