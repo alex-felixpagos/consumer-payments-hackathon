@@ -73,10 +73,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
 
     # Hero image served directly from GitHub raw content (always public, no deploy needed)
     _WELCOME_IMAGE_URL = "https://raw.githubusercontent.com/alex-felixpagos/consumer-payments-hackathon/feature/cumbia-team/web/biovibe-hero.png"
-    _WELCOME_TRIGGER = "hey biovibe, i'm ready to start tracking my health!"
+    _WELCOME_TRIGGERS = {
+        "hey biovibe, i'm ready to start tracking my health!",
+        "hola biovibe, estoy listo para comenzar a registrar mi salud!",
+        "oi biovibe, estou pronto para começar a monitorar minha saúde!",
+    }
     _PROFILE_SETUP_BTN_ID = "setup_profile"
 
-    if text and text.strip().lower() == _WELCOME_TRIGGER:
+    if text and text.strip().lower() in _WELCOME_TRIGGERS:
         logger.info("OUTBOUND | to=%s message=<welcome image + interactive>", msg.phone_number)
         try:
             await client.send_media_message(
