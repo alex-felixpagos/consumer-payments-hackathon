@@ -18,6 +18,7 @@ def test_map_intent_label_to_command() -> None:
     assert dc.map_intent_label_to_command("help_principal") == "help principal"
     assert dc.map_intent_label_to_command("demo_shortfall") == "demo shortfall"
     assert dc.map_intent_label_to_command("envelope") == "envelope"
+    assert dc.map_intent_label_to_command("wallet") == "envelope"
 
 
 def test_build_outbound_resolved_command_used_when_parse_fails() -> None:
@@ -26,10 +27,10 @@ def test_build_outbound_resolved_command_used_when_parse_fails() -> None:
     dc.build_reply(phone, "Card")
     dc.build_reply(phone, "$450 due May 15")
     dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
-    # "show my savings" is not a literal command; stands in for LLM resolving to envelope.
+    # "show my savings" is not a literal command; stands in for LLM resolving to wallet/envelope.
     out = dc.build_outbound(phone, "show my savings", resolved_command="envelope")
-    assert "payment envelope" in out.text.lower()
-    assert "set aside" in out.text.lower()
+    assert "send to wallet" in out.text.lower()
+    assert "lined up" in out.text.lower()
 
 
 def test_parse_command_help_principal_suggestion_buttons() -> None:
@@ -44,6 +45,8 @@ def test_parse_command_exact() -> None:
     assert dc.parse_command("hello") == "hello"
     assert dc.parse_command("HELLO") == "hello"
     assert dc.parse_command("menu") == "menu"
+    assert dc.parse_command("wallet") == "envelope"
+    assert dc.parse_command("m_wallet") == "envelope"
     assert dc.parse_command("m_budget") == "budget"
     assert dc.parse_command("m_help_principal") == "help principal"
     assert dc.parse_command("help_principal") == "help principal"
@@ -87,7 +90,7 @@ def test_happy_path_build_reply() -> None:
     assert "flexible spending" in dc.build_reply(phone, "1800").lower()
     final = dc.build_reply(phone, "500")
     assert "payment plan is ready" in final.lower()
-    assert "set aside for this payment" in final.lower()
+    assert "send to wallet" in final.lower()
 
 
 def test_amount_due_split_flow() -> None:
@@ -138,15 +141,31 @@ def test_budget_summary_response_has_action_buttons() -> None:
     response = dc.build_response(phone, "500")
 
     ids = {b.id for b in response.buttons}
-    assert ids == {"reminder", "im_short"}
+    assert ids == {"reminder", "wallet"}
     assert response.buttons == (
-        dc.ReplyButton(id="reminder", title="Show reminder"),
-        dc.ReplyButton(id="im_short", title="I'm short"),
+        dc.ReplyButton(id="reminder", title="Set reminder"),
+        dc.ReplyButton(id="wallet", title="Send to wallet"),
     )
     assert "Tap a button" in response.body
+    assert "send to wallet" in response.body.lower()
 
 
-def test_show_reminder_button_title_routes_to_reminder() -> None:
+def test_budget_summary_when_tight_shows_reminder_and_im_short() -> None:
+    phone = "+10000000014"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+    dc.build_reply(phone, "3000")
+    dc.build_reply(phone, "2000")
+    response = dc.build_response(phone, "900")
+
+    assert {b.id for b in response.buttons} == {"reminder", "im_short"}
+    assert "that is tight" in response.body.lower()
+    assert "i'm short" in response.body.lower()
+
+
+def test_set_reminder_phrase_routes_to_reminder() -> None:
+    assert dc.parse_command("Set reminder") == "reminder"
     assert dc.parse_command("Show reminder") == "reminder"
 
 
@@ -158,6 +177,8 @@ def test_reminder_mentions_im_short() -> None:
 
     out = dc.build_reply(phone, "reminder")
 
+    assert "one day before" in out.lower()
+    assert "may 15" in out.lower()
     assert "If covering principal is stressful" in out
     assert "I'm short" in out
 
@@ -278,7 +299,7 @@ def test_menu_command_returns_interactive_list_idle_state() -> None:
 
 
 def test_menu_expands_after_goal_is_set() -> None:
-    """After a payment goal exists, menu offers budget, envelope, reminder, help."""
+    """After a payment goal exists, menu offers budget, send-to-wallet, reminder, help."""
     phone = "+10000000019"
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
@@ -290,7 +311,7 @@ def test_menu_expands_after_goal_is_set() -> None:
     assert {
         "m_start",
         "m_budget",
-        "m_envelope",
+        "m_wallet",
         "m_reminder",
         "m_help_principal",
         "m_demo_shortfall",

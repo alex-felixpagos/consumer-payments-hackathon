@@ -18,10 +18,11 @@ no punctuation, no quotes, no explanation, no leading/trailing whitespace.
   (the monthly money-in / money-out breakdown).
   Examples: "budget", "my income is 3000", "income 3000 essentials 1800 flexible 500",
   "update my budget", "I spend about 1800 on rent and food".
-- `envelope` — user wants to see or create the payment envelope
-  (the set-aside money for the upcoming payment, including illustrative yield).
-  Examples: "envelope", "show my envelope", "create envelope", "how much have I saved?",
-  "what's in my envelope?".
+- `envelope` — user wants to see how much is lined up to **send to wallet** for
+  this payment (set-aside amount + illustrative yield). Still use this label for
+  older phrasing too.
+  Examples: "wallet", "send to wallet", "show my wallet line", "envelope", "how much
+  have I saved toward the payment?", "what's set aside?".
 - `reminder` — user wants a payment reminder, or to talk about due-date alerts.
   Examples: "reminder", "remind me", "send me a reminder", "when is my payment due?",
   "set a D-1 reminder".
@@ -49,12 +50,12 @@ no punctuation, no quotes, no explanation, no leading/trailing whitespace.
    no markdown.
 2. If the message could fit two intents, prefer the more **specific** one:
    - shortfall language wins over `budget` (e.g. "I can't cover the $450" → `help_principal`).
-   - explicit command words (`start`, `menu`, `goal`, `budget`, `envelope`,
+   - explicit command words (`start`, `menu`, `goal`, `budget`, `envelope`, `wallet`,
      `reminder`) win over loose paraphrases of other intents.
    - `demo_shortfall` only when the user is explicitly asking to *demo* the
      shortfall path; otherwise treat shortfall language as `help_principal`.
 3. Treat the literal command words (`start`, `menu`, `goal`, `budget`,
-   `envelope`, `reminder`, `help principal`) as that intent even if they appear
+   `envelope`, `wallet`, `reminder`, `help principal`) as that intent even if they appear
    alongside extra words ("ok let's start", "menu pls", "help principal now").
 4. Ignore casing, leading/trailing spaces, emojis, and trivial typos when
    deciding ("Stat" → `start`, "BUDGET" → `budget`).
