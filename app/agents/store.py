@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from app.agents.schemas import Agent, AgentCreate, AgentUpdate
+from app.agents.tools import available_tool_names
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CONFIG_DIR = _REPO_ROOT / "config"
@@ -51,10 +52,17 @@ def _to_agent(raw: dict[str, Any]) -> Agent:
         name=raw["name"],
         system_prompt=raw.get("system_prompt", ""),
         model=raw.get("model", "claude-3-5-sonnet-20241022"),
+        tool_names=raw.get("tool_names", []),
         sub_agent_ids=raw.get("sub_agent_ids", []),
         created_at=raw["created_at"],
         updated_at=raw["updated_at"],
     )
+
+
+def _validate_tool_names(tool_names: list[str]) -> None:
+    unknown = sorted(set(tool_names) - available_tool_names())
+    if unknown:
+        raise ValueError(f"Unknown tool_name(s): {', '.join(unknown)}")
 
 
 def list_agents() -> list[Agent]:
@@ -95,12 +103,14 @@ def create_agent(payload: AgentCreate) -> Agent:
         "name": payload.name,
         "system_prompt": payload.system_prompt,
         "model": payload.model,
+        "tool_names": payload.tool_names,
         "sub_agent_ids": payload.sub_agent_ids,
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
     }
     with _LOCK:
         data = _load_raw()
+        _validate_tool_names(payload.tool_names)
         # Validate sub-agent ids actually exist.
         existing_ids = {a["id"] for a in data["agents"]}
         for sid in payload.sub_agent_ids:
@@ -125,6 +135,9 @@ def update_agent(agent_id: str, payload: AgentUpdate) -> Agent | None:
                 raw["system_prompt"] = payload.system_prompt
             if payload.model is not None:
                 raw["model"] = payload.model
+            if payload.tool_names is not None:
+                _validate_tool_names(payload.tool_names)
+                raw["tool_names"] = payload.tool_names
             if payload.sub_agent_ids is not None:
                 for sid in payload.sub_agent_ids:
                     if sid == agent_id:

@@ -26,6 +26,10 @@ class AgentBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=80, description="Human-readable agent name")
     system_prompt: str = Field(default="", description="System / instruction prompt sent to the LLM")
     model: str = Field(default=DEFAULT_MODEL, description="Claude model id (no provider prefix)")
+    tool_names: list[str] = Field(
+        default_factory=list,
+        description="Names of application tools this agent can call",
+    )
     sub_agent_ids: list[str] = Field(
         default_factory=list,
         description="IDs of other agents that this agent can delegate the conversation to",
@@ -40,6 +44,7 @@ class AgentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     system_prompt: str | None = None
     model: str | None = None
+    tool_names: list[str] | None = None
     sub_agent_ids: list[str] | None = None
 
 

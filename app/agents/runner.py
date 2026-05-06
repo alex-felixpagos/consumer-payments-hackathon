@@ -14,23 +14,61 @@ import os
 import re
 from typing import Any
 
-from litellm import acompletion
-from litellm.exceptions import (
-    APIConnectionError,
-    APIError,
-    AuthenticationError,
-    BadGatewayError,
-    BadRequestError,
-    InternalServerError,
-    NotFoundError,
-    PermissionDeniedError,
-    RateLimitError,
-    ServiceUnavailableError,
-    Timeout,
-)
+try:
+    from litellm import acompletion
+    from litellm.exceptions import (
+        APIConnectionError,
+        APIError,
+        AuthenticationError,
+        BadGatewayError,
+        BadRequestError,
+        InternalServerError,
+        NotFoundError,
+        PermissionDeniedError,
+        RateLimitError,
+        ServiceUnavailableError,
+        Timeout,
+    )
+except ModuleNotFoundError:
+    class APIConnectionError(Exception):
+        pass
+
+    class APIError(Exception):
+        pass
+
+    class AuthenticationError(Exception):
+        pass
+
+    class BadGatewayError(Exception):
+        pass
+
+    class BadRequestError(Exception):
+        pass
+
+    class InternalServerError(Exception):
+        pass
+
+    class NotFoundError(Exception):
+        pass
+
+    class PermissionDeniedError(Exception):
+        pass
+
+    class RateLimitError(Exception):
+        pass
+
+    class ServiceUnavailableError(Exception):
+        pass
+
+    class Timeout(Exception):
+        pass
+
+    async def acompletion(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("litellm is not installed. Run `pip install -r requirements.txt`.")
 
 from app.agents.schemas import Agent
 from app.agents.store import get_agent, get_agents_map
+from app.agents.tools import resolve_agent_tools
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -102,6 +140,7 @@ def build_llm_agent(agent: Agent, agents_map: dict[str, Agent], visited: set[str
         description=description,
         model=LiteLlm(model=f"anthropic/{agent.model}"),
         instruction=agent.system_prompt or "You are a helpful assistant.",
+        tools=resolve_agent_tools(agent.tool_names),
         sub_agents=sub_agents,
     )
 
