@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.bot import handle_inbound
+from app.bot import handle_agent_inbound, handle_inbound
 from app.schemas.kapso.message import KapsoMessage
 from app.schemas.kapso.nfm_reply import extract_nfm_reply
 from app.services.stripe_service import ChargeResult
@@ -56,22 +57,35 @@ def _build_nfm_reply_msg(payload: dict) -> KapsoMessage:
 
 
 @pytest.mark.asyncio
-async def test_pay_command_triggers_flow_message(monkeypatch) -> None:
-    monkeypatch.setenv("KAPSO_FLOW_ID", "1234567890")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-
+async def test_pay_command_triggers_flow_message() -> None:
     msg = _build_text_msg("pay 50")
     client = AsyncMock()
 
-    await handle_inbound(msg, client)
+    settings = SimpleNamespace(kapso_flow_id="1234567890", stripe_currency="usd")
+    with patch("app.bot.get_settings", return_value=settings):
+        await handle_inbound(msg, client)
 
     client.send_flow_message.assert_awaited_once()
     kwargs = client.send_flow_message.await_args.kwargs
     assert kwargs["flow_id"] == "1234567890"
     assert kwargs["initial_data"]["amount_cents"] == 5000
     assert "$50.00" in kwargs["flow_cta"]
+    client.send_whatsapp_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_agent_webhook_pay_command_triggers_flow_message() -> None:
+    msg = _build_text_msg("pay 1")
+    client = AsyncMock()
+
+    settings = SimpleNamespace(kapso_flow_id="1234567890", stripe_currency="usd")
+    with patch("app.bot.get_settings", return_value=settings):
+        await handle_agent_inbound("hackaton-movie-agent", msg, client)
+
+    client.send_flow_message.assert_awaited_once()
+    kwargs = client.send_flow_message.await_args.kwargs
+    assert kwargs["flow_id"] == "1234567890"
+    assert kwargs["initial_data"]["amount_cents"] == 100
     client.send_whatsapp_message.assert_not_awaited()
 
 

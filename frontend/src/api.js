@@ -27,4 +27,5 @@ export const api = {
     request(`/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   deleteAgent: (id) => request(`/${id}`, { method: 'DELETE' }),
   listModels: () => request('/models'),
+  listConversations: () => request('/conversations'),
 }

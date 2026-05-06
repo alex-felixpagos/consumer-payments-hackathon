@@ -5,8 +5,10 @@ import AgentForm from './AgentForm.jsx'
 export default function App() {
   const [agents, setAgents] = useState([])
   const [models, setModels] = useState([])
+  const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState('')
+  const [conversationError, setConversationError] = useState('')
 
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -16,10 +18,23 @@ export default function App() {
   const refresh = async () => {
     try {
       setListError('')
-      const list = await api.listAgents()
+      const [list, history] = await Promise.all([
+        api.listAgents(),
+        api.listConversations(),
+      ])
       setAgents(list)
+      setConversations(history)
     } catch (err) {
       setListError(err.message)
+    }
+  }
+
+  const refreshConversations = async () => {
+    try {
+      setConversationError('')
+      setConversations(await api.listConversations())
+    } catch (err) {
+      setConversationError(err.message)
     }
   }
 
@@ -28,13 +43,15 @@ export default function App() {
     ;(async () => {
       setLoading(true)
       try {
-        const [list, modelList] = await Promise.all([
+        const [list, modelList, history] = await Promise.all([
           api.listAgents(),
           api.listModels(),
+          api.listConversations(),
         ])
         if (!cancelled) {
           setAgents(list)
           setModels(modelList)
+          setConversations(history)
         }
       } catch (err) {
         if (!cancelled) setListError(err.message)
@@ -47,10 +64,17 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const interval = window.setInterval(refreshConversations, 5000)
+    return () => window.clearInterval(interval)
+  }, [])
+
   const agentsById = useMemo(
     () => Object.fromEntries(agents.map((a) => [a.id, a])),
     [agents],
   )
+
+  const activeConversation = conversations[0] || null
 
   const openCreate = () => {
     setEditing(null)
@@ -111,6 +135,57 @@ export default function App() {
       </header>
 
       {listError && <div className="error" style={{ marginBottom: 16 }}>{listError}</div>}
+
+      <section className="history-panel">
+        <div className="history-header">
+          <div>
+            <h2>Active Conversation</h2>
+            <p>
+              Persisted in <code>config/conversation_history.json</code>
+              {activeConversation
+                ? ` for ${agentsById[activeConversation.agent_id]?.name || activeConversation.agent_id}`
+                : ''}
+            </p>
+          </div>
+          <button className="btn btn-secondary" onClick={refreshConversations}>
+            Refresh
+          </button>
+        </div>
+
+        {conversationError && <div className="error">{conversationError}</div>}
+
+        {!activeConversation ? (
+          <div className="history-empty">No conversation history has been recorded yet.</div>
+        ) : (
+          <>
+            <div className="history-meta">
+              <span>{activeConversation.phone_number}</span>
+              <span>{activeConversation.messages.length} messages</span>
+              <span>Updated {new Date(activeConversation.updated_at).toLocaleString()}</span>
+            </div>
+            <div className="history-messages">
+              {activeConversation.messages.length === 0 ? (
+                <div className="history-empty">This session is active, but no turns have been saved yet.</div>
+              ) : (
+                activeConversation.messages.map((message) => (
+                  <article key={message.id} className={`history-message ${message.role}`}>
+                    <div className="history-message-meta">
+                      <span>{message.role === 'user' ? 'User' : 'Assistant'}</span>
+                      <span>{new Date(message.created_at).toLocaleTimeString()}</span>
+                    </div>
+                    <p>{message.content}</p>
+                    {message.metadata?.delegated_to && (
+                      <span className="badge badge-muted">
+                        Delegated to {message.metadata.delegated_to}
+                      </span>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </section>
 
       {loading ? (
         <div className="empty">

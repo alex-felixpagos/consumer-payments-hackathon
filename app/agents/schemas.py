@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -61,9 +61,28 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     agent_id: str
+    session_id: str | None = None
     response: str
     delegated_to: str | None = None
     events: list[dict] = Field(default_factory=list)
+
+
+class ConversationMessage(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConversationHistory(BaseModel):
+    agent_id: str
+    phone_number: str
+    session_id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessage] = Field(default_factory=list)
 
 
 class ModelInfo(BaseModel):

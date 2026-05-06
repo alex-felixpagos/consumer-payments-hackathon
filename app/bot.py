@@ -14,6 +14,8 @@ import re
 import threading
 import time
 
+import httpx
+
 from app.agents.runner import TransientAgentError, run_agent_turn
 from app.agents.store import get_agent_by_name
 from app.config import get_settings
@@ -108,17 +110,30 @@ async def _handle_pay_command(amount: float, msg: KapsoMessage, client: KapsoCli
 
     amount_cents = int(round(amount * 100))
     amount_display = f"${amount:.2f} {settings.stripe_currency.upper()}"
-    await client.send_flow_message(
-        to=msg.phone_number,
-        flow_id=settings.kapso_flow_id,
-        flow_cta=f"Pay {amount_display}",
-        body_text=f"Tap below to pay {amount_display} (test mode).",
-        screen="PAYMENT",
-        initial_data={
-            "amount_display": amount_display,
-            "amount_cents": amount_cents,
-        },
-    )
+    try:
+        await client.send_flow_message(
+            to=msg.phone_number,
+            flow_id=settings.kapso_flow_id,
+            flow_cta=f"Pay {amount_display}",
+            body_text=f"Tap below to pay {amount_display} (test mode).",
+            screen="PAYMENT",
+            initial_data={
+                "amount_display": amount_display,
+                "amount_cents": amount_cents,
+            },
+        )
+    except httpx.HTTPStatusError as e:
+        details = ""
+        try:
+            details = e.response.json().get("error", {}).get("error_data", {}).get("details", "")
+        except ValueError:
+            details = e.response.text
+        logger.error("Payment Flow send failed for flow_id=%s: %s", settings.kapso_flow_id, details)
+        await client.send_whatsapp_message(
+            msg.phone_number,
+            "I tried to open the payment Flow, but Meta rejected KAPSO_FLOW_ID. "
+            "Make sure the Flow is published and belongs to the same WhatsApp Business Account as this Kapso phone number.",
+        )
 
 
 async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
@@ -142,6 +157,11 @@ async def handle_agent_inbound(agent_name: str, msg: KapsoMessage, client: Kapso
         logger.info("Ignoring duplicate inbound Kapso message id=%s", msg.id)
         return
 
+    text = inbound_text(msg) or ""
+    if (msg.interactive and msg.interactive.get("type") == "nfm_reply") or PAY_RE.match(text):
+        await handle_inbound(msg, client)
+        return
+
     agent = get_agent_by_name(agent_name)
     if agent is None:
         logger.error("Inbound webhook requested unknown agent name=%s", agent_name)
@@ -151,7 +171,6 @@ async def handle_agent_inbound(agent_name: str, msg: KapsoMessage, client: Kapso
         )
         return
 
-    text = inbound_text(msg)
     if not text or not text.strip():
         await client.send_whatsapp_message(
             msg.phone_number,

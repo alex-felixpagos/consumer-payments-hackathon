@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from app.agents.models import list_anthropic_models, model_ids
-from app.agents import schemas, store
+from app.agents import history, schemas, sessions, store
 from app.agents.runner import run_agent
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,18 @@ async def list_models() -> list[schemas.ModelInfo]:
 @router.get("", response_model=list[schemas.Agent])
 async def list_agents() -> list[schemas.Agent]:
     return store.list_agents()
+
+
+@router.get("/conversations", response_model=list[schemas.ConversationHistory])
+async def list_conversations() -> list[schemas.ConversationHistory]:
+    for session in sessions.list_sessions():
+        history.ensure_conversation(
+            agent_id=session["agent_id"],
+            phone_number=session["phone_number"],
+            session_id=session["session_id"],
+            user_id=session["user_id"],
+        )
+    return history.list_conversations()
 
 
 @router.post("", response_model=schemas.Agent, status_code=201)

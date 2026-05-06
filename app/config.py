@@ -14,6 +14,20 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        _ = settings_cls
+        # In this hackathon app, .env is the local source of truth; this avoids
+        # stale exported shell vars silently overriding newly pasted dashboard IDs.
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
+
     app_name: str = Field(default="Hackathon WhatsApp API", alias="APP_NAME")
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     environment: str = Field(default="development", alias="ENVIRONMENT")

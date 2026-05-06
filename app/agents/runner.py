@@ -67,7 +67,7 @@ except ModuleNotFoundError:
         raise RuntimeError("litellm is not installed. Run `pip install -r requirements.txt`.")
 
 from app.agents.schemas import Agent
-from app.agents.store import get_agent, get_agents_map
+from app.agents.store import get_agent
 from app.agents.tools import resolve_agent_tools
 from app.config import get_settings
 
@@ -295,7 +295,7 @@ async def run_agent_turn(
     """
     _require_anthropic_key()
 
-    from app.agents import runtime
+    from app.agents import history, runtime
 
     effective_user_id = user_id or f"wa:{phone_number.lstrip('+')}"
     runner = runtime.get_runner(agent)
@@ -308,6 +308,17 @@ async def run_agent_turn(
         except TransientAgentError:
             logger.warning("Claude stayed unavailable; using Gemini fallback for agent=%s", agent.name)
             result = await _drive_gemini_fallback(agent, user_message)
+
+    history.append_turn(
+        agent_id=agent.id,
+        phone_number=phone_number,
+        session_id=session_id,
+        user_id=effective_user_id,
+        user_message=user_message,
+        assistant_message=result.get("response") or "",
+        delegated_to=result.get("delegated_to"),
+        events=result.get("events") or [],
+    )
 
     return {
         "agent_id": agent.id,

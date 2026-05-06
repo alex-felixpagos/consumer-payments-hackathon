@@ -2,9 +2,9 @@
 
 Maps `(agent_id, phone_number)` to the ADK session_id (and a `user_id` we use for
 ADK's session service). Survives across requests so chat history persists for the
-duration of the process. The underlying ADK conversation history lives in the
-`InMemoryRunner` cached in `app.agents.runtime` — both must reset together when
-the FastAPI process restarts.
+duration of the process. The live ADK conversation memory lives in the
+`InMemoryRunner` cached in `app.agents.runtime`; durable display transcripts are
+stored separately in `config/conversation_history.json`.
 """
 
 from __future__ import annotations
@@ -56,6 +56,12 @@ def find_session(agent_id: str, phone_number: str) -> dict[str, Any] | None:
         if entry["agent_id"] == agent_id and entry["phone_number"] == phone:
             return dict(entry)
     return None
+
+
+def list_sessions() -> list[dict[str, Any]]:
+    with _LOCK:
+        data = _load_raw()
+    return [dict(entry) for entry in data["sessions"]]
 
 
 def save_session(agent_id: str, phone_number: str, session_id: str, user_id: str) -> dict[str, Any]:
