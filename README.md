@@ -244,3 +244,15 @@ If you see JSON (including `{"data":[]}`), your key is valid.
 - **Wrong `KAPSO_PHONE_NUMBER_ID`:** you copied the ID from **production**, another project, or the wrong panel—re-copy from the **same sandbox WhatsApp** screen as the API key.
 - **Trying to use production:** pause and switch back to **sandbox** for this repo; production onboarding is a different checklist (not covered here).
 
+## Demo outbound message 🎯
+
+```bash
+python -m app.send_demo_message --to "+1XXXXXXXXXX"
+```
+
+## Routes 🗺️
+
+- `GET /health`
+- `GET /webhooks/whatsapp` (verification)
+- `POST /webhooks/whatsapp` (inbound events)
+- `POST /api/send-text` (manual outbound)
