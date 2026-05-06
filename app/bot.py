@@ -91,7 +91,7 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                 "I'll remember everything and give you personalized insights.\n\n"
                 "Want to set up your profile for a better experience?"
             ),
-            "btn_title": "Set up my profile ✨",
+            "btn_title": "Setup profile ✨",
             "footer": "Or just start chatting — I learn as we go!",
             "profile_existing": (
                 "Here's your current profile 👤\n\n"
@@ -119,7 +119,7 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                 "lo recordaré todo y te daré insights personalizados.\n\n"
                 "¿Quieres configurar tu perfil para una mejor experiencia?"
             ),
-            "btn_title": "Configurar mi perfil ✨",
+            "btn_title": "Ver mi perfil ✨",
             "footer": "¡O simplemente empieza a escribir — aprendo contigo!",
             "profile_existing": (
                 "Este es tu perfil actual 👤\n\n"
@@ -147,7 +147,7 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                 "vou lembrar de tudo e te dar insights personalizados.\n\n"
                 "Quer configurar seu perfil para uma experiência melhor?"
             ),
-            "btn_title": "Configurar meu perfil ✨",
+            "btn_title": "Ver meu perfil ✨",
             "footer": "Ou pode começar a conversar — aprendo enquanto você usa!",
             "profile_existing": (
                 "Seu perfil atual 👤\n\n"
