@@ -39,3 +39,8 @@ def get_receipt(receipt_id: str) -> ReceiptRecord | None:
 def clear_receipts_for_tests() -> None:
     """Clear all stored receipts (pytest only)."""
     _STORE.clear()
+
+
+def list_receipt_ids_for_tests() -> list[str]:
+    """Return all stored receipt ids (pytest only)."""
+    return list(_STORE.keys())

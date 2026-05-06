@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from app.config import get_settings
 from app.felix_pay import (
     PAYMENT_RAIL_LABEL,
     PaymentSession,
@@ -168,7 +167,6 @@ def _build_receipt_chat_message(
     total_cop: int | float,
     payment_rail: str,
     new_balance_usd: float,
-    receipt_url: str,
 ) -> str:
     if tip_pct > 0 and tip_usd > 0:
         breakdown = RECEIPT_BREAKDOWN_WITH_TIP.format(
@@ -186,7 +184,6 @@ def _build_receipt_chat_message(
         breakdown=breakdown,
         payment_rail=payment_rail,
         new_balance_usd=float(new_balance_usd),
-        receipt_url=receipt_url,
     )
 
 
@@ -197,10 +194,6 @@ async def _send_confirmation_prompt(client: KapsoClient, to: str, session_previe
         _CONFIRM_BUTTONS,
         footer="Demo FX rate — no real money moves.",
     )
-
-
-def _receipt_base_url() -> str:
-    return get_settings().public_base_url.rstrip("/")
 
 
 async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
@@ -346,7 +339,6 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                 )
             )
             _STORE.delete(phone)
-            url = f"{_receipt_base_url()}/r/{rid}"
             await client.send_whatsapp_message(
                 phone,
                 _build_receipt_chat_message(
@@ -359,14 +351,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
                     total_cop=total_cop,
                     payment_rail=str(result.receipt.get("payment_rail", PAYMENT_RAIL_LABEL)),
                     new_balance_usd=float(new_balance_usd),
-                    receipt_url=url,
                 ),
             )
             logger.info(
-                "wallet debit applied: phone=%s total_usd=%s new_balance=%s",
+                "wallet debit applied: phone=%s total_usd=%s new_balance=%s receipt_id=%s",
                 phone,
                 total_usd,
                 new_balance_usd,
+                rid,
             )
             return
 

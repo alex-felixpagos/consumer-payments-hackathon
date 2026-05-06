@@ -8,7 +8,11 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.receipts_memory import clear_receipts_for_tests, get_receipt
+from app.receipts_memory import (
+    clear_receipts_for_tests,
+    get_receipt,
+    list_receipt_ids_for_tests,
+)
 from app.bot import reset_felix_pay_state_for_tests
 
 client = TestClient(app)
@@ -161,6 +165,7 @@ def test_webhook_image_confirm_creates_receipt(monkeypatch) -> None:
         )
         assert r5.status_code == 200
 
-    assert any("/r/" in t[1] for t in fake.texts)
-    rid = next(t[1] for t in fake.texts if "/r/" in t[1]).split("/r/")[-1].strip().split()[0]
-    assert get_receipt(rid) is not None
+    assert any("Payment confirmed" in t[1] for t in fake.texts)
+    ids = list_receipt_ids_for_tests()
+    assert len(ids) == 1
+    assert get_receipt(ids[0]) is not None

@@ -24,9 +24,7 @@ RECEIPT_CHAT_MESSAGE = (
     "Total: *${total_usd:,.2f} USD* ({total_cop:,} COP)\n"
     "{breakdown}"
     "Rail: {payment_rail} · Settled in seconds\n"
-    "New Felix Wallet balance: *${new_balance_usd:,.2f} USD*\n"
-    "\n"
-    "View full receipt: {receipt_url}"
+    "New Felix Wallet balance: *${new_balance_usd:,.2f} USD*"
 )
 
 #: Optional sub-tile used inside RECEIPT_CHAT_MESSAGE when a tip was added.

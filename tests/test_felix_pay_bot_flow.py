@@ -9,7 +9,11 @@ from fastapi.testclient import TestClient
 
 from app.bot import handle_inbound, reset_felix_pay_state_for_tests
 from app.main import app
-from app.receipts_memory import clear_receipts_for_tests, get_receipt
+from app.receipts_memory import (
+    clear_receipts_for_tests,
+    get_receipt,
+    list_receipt_ids_for_tests,
+)
 from app.schemas.kapso import KapsoMessage
 
 client = TestClient(app)
@@ -159,13 +163,16 @@ def test_handle_inbound_happy_path_image_to_receipt(monkeypatch: pytest.MonkeyPa
         )
         assert any("Processing payment" in t[1] for t in fake.texts)
 
-        receipt_line = next(t[1] for t in fake.texts if "/r/" in t[1])
-        assert "Payment confirmed" in receipt_line
+        receipt_line = next(t[1] for t in fake.texts if "Payment confirmed" in t[1])
         assert "Total: *$12.00 USD*" in receipt_line
         assert "Tip (20%)" in receipt_line
         assert "Rail: Bre-B" in receipt_line
         assert "$235.50 USD" in receipt_line  # 247.50 - 12.00
-        rid = receipt_line.split("/r/")[-1].strip().split()[0]
+        # Link is intentionally NOT in the chat message (ngrok-free interstitial bypass).
+        assert "/r/" not in receipt_line
+        ids = list_receipt_ids_for_tests()
+        assert len(ids) == 1
+        rid = ids[0]
         row = get_receipt(rid)
         assert row is not None
         assert row.amount_usd == 10.0
@@ -241,6 +248,7 @@ def test_no_tip_skips_breakdown(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "Subtotal" not in receipt_msg
         assert "Tip" not in receipt_msg
         assert "$237.50 USD" in receipt_msg  # 247.50 - 10.00
+        assert "/r/" not in receipt_msg
 
     asyncio.run(_run())
 
