@@ -17,12 +17,15 @@ from app.felix_pay.session import (
     new_session_id,
     utcnow,
 )
+from app.felix_pay.wallet import DEFAULT_WALLET_BALANCE_USD, WalletStore
 
 __all__ = [
     "ConfirmResult",
+    "DEFAULT_WALLET_BALANCE_USD",
     "PaymentSession",
     "PaymentSessionStatus",
     "SessionStore",
+    "WalletStore",
     "apply_amount_input",
     "apply_currency_choice",
     "build_confirmation_preview",

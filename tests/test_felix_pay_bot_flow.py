@@ -91,8 +91,10 @@ def test_handle_inbound_happy_path_image_to_receipt(monkeypatch: pytest.MonkeyPa
             _msg(msg_id="1", msg_type="image", from_number=phone, image={"id": "mid"}),
             fake,  # type: ignore[arg-type]
         )
-        assert len(fake.texts) == 1
-        assert "How much" in fake.texts[0][1]
+        assert any("Felix Wallet" in t[1] for t in fake.texts)
+        assert any("$247.50" in t[1] for t in fake.texts)
+        assert any("Vendor found" in t[1] and "Café El Tiempo" in t[1] for t in fake.texts)
+        assert any("How much" in t[1] for t in fake.texts)
 
         await handle_inbound(
             _msg(msg_id="2", msg_type="text", from_number=phone, text="10"),

@@ -9,8 +9,10 @@ import logging
 from datetime import datetime, timezone
 from app.config import get_settings
 from app.felix_pay import (
+    PaymentSession,
     PaymentSessionStatus,
     SessionStore,
+    WalletStore,
     apply_amount_input,
     apply_currency_choice,
     build_confirmation_preview,
@@ -24,7 +26,10 @@ from app.felix_pay.user_messages import (
     PAYMENT_CANCELLED,
     PAYMENT_SENT,
     PROCESSING_PAYMENT,
+    STUB_VENDOR_LOCATION,
     VENDOR_AMOUNT_PROMPT,
+    VENDOR_FOUND_CARD,
+    WALLET_BALANCE_CARD,
 )
 
 PROCESSING_DELAY_SECONDS = 1.5
@@ -35,6 +40,7 @@ from app.services.kapso_client import KapsoClient
 logger = logging.getLogger(__name__)
 
 _STORE = SessionStore()
+_WALLET = WalletStore()
 
 _CURRENCY_BUTTONS: list[dict[str, str]] = [
     {"id": "cur_usd", "title": "🇺🇸 USD"},
@@ -53,8 +59,9 @@ _CURRENCY_BUTTON_TO_CODE: dict[str, str] = {
 
 
 def reset_felix_pay_state_for_tests() -> None:
-    """Clear in-memory payment sessions (used by pytest)."""
+    """Clear in-memory payment sessions and wallet balances (used by pytest)."""
     _STORE.clear()
+    _WALLET.clear()
 
 
 def _is_hola(msg: KapsoMessage) -> bool:
@@ -93,9 +100,24 @@ def inbound_button_id(msg: KapsoMessage) -> str | None:
     return None
 
 
-async def _send_amount_prompt(client: KapsoClient, to: str, vendor_name: str) -> None:
-    body = VENDOR_AMOUNT_PROMPT.format(vendor_name=vendor_name)
+async def _send_wallet_card(client: KapsoClient, to: str, balance_usd: float) -> None:
+    await client.send_whatsapp_message(
+        to, WALLET_BALANCE_CARD.format(balance_usd=balance_usd)
+    )
+
+
+async def _send_vendor_found_card(client: KapsoClient, to: str, session: PaymentSession) -> None:
+    body = VENDOR_FOUND_CARD.format(
+        vendor_name=session.vendor_name,
+        vendor_location=STUB_VENDOR_LOCATION,
+        amount_prompt=VENDOR_AMOUNT_PROMPT,
+    )
     await client.send_whatsapp_message(to, body)
+
+
+async def _send_amount_prompt(client: KapsoClient, to: str, vendor_name: str) -> None:
+    """Lighter re-prompt without the full vendor card (used when state is unexpected)."""
+    await client.send_whatsapp_message(to, VENDOR_AMOUNT_PROMPT)
 
 
 async def _send_currency_prompt(client: KapsoClient, to: str) -> None:
@@ -133,7 +155,8 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     if msg.type == "image":
         new_session = start_session_after_image_stub(phone)
         _STORE.set(phone, new_session)
-        await _send_amount_prompt(client, phone, new_session.vendor_name)
+        await _send_wallet_card(client, phone, _WALLET.get_balance(phone))
+        await _send_vendor_found_card(client, phone, new_session)
         return
 
     # --- Cold start: text with no active session ---
@@ -202,11 +225,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             await client.send_whatsapp_message(phone, PROCESSING_PAYMENT)
             await asyncio.sleep(PROCESSING_DELAY_SECONDS)
 
+            paid_usd = float(result.receipt["amount_usd"])
+            new_balance_usd = _WALLET.debit(phone, paid_usd)
+
             rid = str(result.receipt_id)
             save_receipt(
                 ReceiptRecord(
                     receipt_id=rid,
-                    amount_usd=float(result.receipt["amount_usd"]),
+                    amount_usd=paid_usd,
                     amount_cop=float(result.receipt["amount_cop"]),
                     fx_rate=float(result.receipt["fx_rate"]),
                     vendor_name=str(result.receipt["vendor_name"]),
@@ -218,6 +244,12 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             await client.send_whatsapp_message(
                 phone,
                 f"{PAYMENT_SENT}\n{url}",
+            )
+            logger.info(
+                "wallet debit applied: phone=%s usd=%s new_balance=%s",
+                phone,
+                paid_usd,
+                new_balance_usd,
             )
             return
 
