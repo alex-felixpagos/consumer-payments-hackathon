@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BioVibe – AI Health Tracking on WhatsApp</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --border: #222;
+      --green: #25d366;
+      --green-hover: #1db954;
+      --accent: #7c3aed;
+      --accent-light: #a78bfa;
+      --text: #f0f0f0;
+      --muted: #888;
+      --radius: 16px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* NAV */
+    nav {
+      width: 100%;
+      max-width: 900px;
+      padding: 24px 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, var(--accent-light), var(--green));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .lang-switcher {
+      display: flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px;
+    }
+
+    .lang-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      letter-spacing: 0.3px;
+    }
+
+    .lang-btn.active {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 999px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    /* HERO */
+    .hero {
+      width: 100%;
+      max-width: 700px;
+      padding: 80px 24px 60px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent-light);
+      background: rgba(124, 58, 237, 0.12);
+      border: 1px solid rgba(124, 58, 237, 0.3);
+      padding: 6px 14px;
+      border-radius: 999px;
+      letter-spacing: 0.3px;
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 6vw, 3.8rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+    }
+
+    h1 span {
+      background: linear-gradient(135deg, var(--accent-light) 0%, var(--green) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subheadline {
+      font-size: clamp(1rem, 2.5vw, 1.2rem);
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 560px;
+    }
+
+    /* CTA */
+    .cta-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--green);
+      color: #000;
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: 16px 32px;
+      border-radius: 999px;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s;
+      letter-spacing: -0.2px;
+    }
+
+    .cta-btn:hover {
+      background: var(--green-hover);
+      transform: translateY(-2px);
+    }
+
+    .cta-btn svg {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .cta-hint { font-size: 0.8rem; color: var(--muted); }
+
+    /* FEATURES */
+    .features {
+      width: 100%;
+      max-width: 860px;
+      padding: 0 24px 80px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.2s;
+    }
+
+    .feature-card:hover { border-color: #444; }
+    .feature-icon { font-size: 1.8rem; }
+    .feature-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .feature-desc { font-size: 0.88rem; color: var(--muted); line-height: 1.6; }
+
+    /* HOW IT WORKS */
+    .how {
+      width: 100%;
+      max-width: 700px;
+      padding: 0 24px 80px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 32px;
+    }
+
+    .section-title { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+
+    .steps { display: flex; flex-direction: column; gap: 0; width: 100%; text-align: left; }
+
+    .step {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .step:last-child { border-bottom: none; }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(124, 58, 237, 0.15);
+      border: 1px solid rgba(124, 58, 237, 0.4);
+      color: var(--accent-light);
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-text strong { display: block; font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+    .step-text span { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+
+    /* FOOTER */
+    footer {
+      width: 100%;
+      border-top: 1px solid var(--border);
+      padding: 24px;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <span class="logo">BioVibe</span>
+    <div class="nav-right">
+      <div class="lang-switcher">
+        <button class="lang-btn active" onclick="setLang('en')">EN</button>
+        <button class="lang-btn" onclick="setLang('es')">ES</button>
+        <button class="lang-btn" onclick="setLang('pt')">PT</button>
+      </div>
+      <span class="badge" data-i18n="badge">Hackathon MVP</span>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-tag">
+      <span>✦</span> <span data-i18n="powered">Powered by Gemini 1.5 Flash</span>
+    </div>
+
+    <h1 data-i18n="headline">Your Health,<br /><span data-i18n="headline_accent">Tracked by AI</span></h1>
+
+    <p class="subheadline" data-i18n="subheadline">
+      Send a voice note or a quick text. BioVibe logs your meals, symptoms, sleep, and mood — and tells you what it all means.
+    </p>
+
+    <div class="cta-wrap">
+      <a
+        class="cta-btn"
+        id="cta-link"
+        href="https://wa.me/56920403095?text=Hey%20BioVibe%2C%20I%27m%20ready%20to%20start%20tracking%20my%20health%21"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.16c-1.52 0-3-.4-4.29-1.15l-.31-.18-3.12.82.83-3.04-.2-.32a8.1 8.1 0 0 1-1.24-4.29c0-4.48 3.65-8.12 8.13-8.12a8.12 8.12 0 0 1 8.13 8.12c0 4.48-3.65 8.12-8.13 8.16zm4.46-6.08c-.24-.12-1.43-.71-1.65-.79-.22-.08-.38-.12-.54.12s-.62.79-.76.95c-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.21-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.31-.74-1.79-.2-.47-.4-.4-.54-.41h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.69 2.58 4.1 3.61.57.25 1.02.4 1.37.51.57.18 1.1.15 1.51.09.46-.07 1.43-.59 1.63-1.15.2-.56.2-1.04.14-1.15-.06-.11-.22-.17-.46-.29z"/>
+        </svg>
+        <span data-i18n="cta">Start on WhatsApp →</span>
+      </a>
+      <span class="cta-hint" data-i18n="cta_hint">Opens WhatsApp with a message ready to send</span>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feature-card">
+      <div class="feature-icon">🎙️</div>
+      <div class="feature-title" data-i18n="f1_title">Voice or Text</div>
+      <div class="feature-desc" data-i18n="f1_desc">Just talk naturally — no forms, no apps, no friction. Send a quick voice note or type a few words.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <div class="feature-title" data-i18n="f2_title">AI Memory</div>
+      <div class="feature-desc" data-i18n="f2_desc">BioVibe remembers everything you share — meals, symptoms, sleep, mood — building your personal health timeline.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💡</div>
+      <div class="feature-title" data-i18n="f3_title">Proactive Insights</div>
+      <div class="feature-desc" data-i18n="f3_desc">Patterns you'd never notice yourself. BioVibe connects the dots and tells you what your data actually means.</div>
+    </div>
+  </section>
+
+  <section class="how">
+    <h2 class="section-title" data-i18n="how_title">How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">
+          <strong data-i18n="s1_title">Click the button above</strong>
+          <span data-i18n="s1_desc">WhatsApp opens with your number and a first message already loaded.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">
+          <strong data-i18n="s2_title">Send your first message</strong>
+          <span data-i18n="s2_desc">BioVibe greets you and explains what you can track.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">
+          <strong data-i18n="s3_title">Log anything — anytime</strong>
+          <span data-i18n="s3_desc">"Had salad for lunch", "Feeling tired", "Ran 5km" — BioVibe handles it all.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-text">
+          <strong data-i18n="s4_title">Get insights back</strong>
+          <span data-i18n="s4_desc">After every message, BioVibe shares a personalised insight based on your history.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p data-i18n="footer">BioVibe · Built at the Hackathon 2026 · <a href="https://github.com/alex-felixpagos/consumer-payments-hackathon" target="_blank">GitHub</a></p>
+  </footer>
+
+  <script>
+    const TRANSLATIONS = {
+      en: {
+        badge: "Hackathon MVP",
+        powered: "Powered by Gemini 1.5 Flash",
+        headline: "Your Health,<br /><span>Tracked by AI</span>",
+        subheadline: "Send a voice note or a quick text. BioVibe logs your meals, symptoms, sleep, and mood — and tells you what it all means.",
+        cta: "Start on WhatsApp →",
+        cta_hint: "Opens WhatsApp with a message ready to send",
+        cta_url: "https://wa.me/56920403095?text=Hey%20BioVibe%2C%20I%27m%20ready%20to%20start%20tracking%20my%20health%21",
+        f1_title: "Voice or Text",
+        f1_desc: "Just talk naturally — no forms, no apps, no friction. Send a quick voice note or type a few words.",
+        f2_title: "AI Memory",
+        f2_desc: "BioVibe remembers everything you share — meals, symptoms, sleep, mood — building your personal health timeline.",
+        f3_title: "Proactive Insights",
+        f3_desc: "Patterns you'd never notice yourself. BioVibe connects the dots and tells you what your data actually means.",
+        how_title: "How it works",
+        s1_title: "Click the button above",
+        s1_desc: "WhatsApp opens with your number and a first message already loaded.",
+        s2_title: "Send your first message",
+        s2_desc: "BioVibe greets you and explains what you can track.",
+        s3_title: "Log anything — anytime",
+        s3_desc: '"Had salad for lunch", "Feeling tired", "Ran 5km" — BioVibe handles it all.',
+        s4_title: "Get insights back",
+        s4_desc: "After every message, BioVibe shares a personalised insight based on your history.",
+        footer: 'BioVibe · Built at the Hackathon 2026 · <a href="https://github.com/alex-felixpagos/consumer-payments-hackathon" target="_blank">GitHub</a>',
+      },
+      es: {
+        badge: "Hackathon MVP",
+        powered: "Desarrollado con Gemini 1.5 Flash",
+        headline: "Tu Salud,<br /><span>Rastreada por IA</span>",
+        subheadline: "Envía una nota de voz o un mensaje rápido. BioVibe registra tus comidas, síntomas, sueño y estado de ánimo — y te dice qué significa todo.",
+        cta: "Comenzar en WhatsApp →",
+        cta_hint: "Abre WhatsApp con un mensaje listo para enviar",
+        cta_url: "https://wa.me/56920403095?text=Hola%20BioVibe%2C%20estoy%20listo%20para%20comenzar%20a%20registrar%20mi%20salud%21",
+        f1_title: "Voz o Texto",
+        f1_desc: "Habla con naturalidad — sin formularios, sin apps, sin fricción. Envía una nota de voz o escribe algunas palabras.",
+        f2_title: "Memoria con IA",
+        f2_desc: "BioVibe recuerda todo lo que compartes — comidas, síntomas, sueño, estado de ánimo — construyendo tu historial de salud personal.",
+        f3_title: "Insights Proactivos",
+        f3_desc: "Patrones que nunca notarías solo. BioVibe conecta los puntos y te dice qué significa realmente tu información.",
+        how_title: "Cómo funciona",
+        s1_title: "Haz clic en el botón de arriba",
+        s1_desc: "WhatsApp se abre con tu número y un primer mensaje ya cargado.",
+        s2_title: "Envía tu primer mensaje",
+        s2_desc: "BioVibe te da la bienvenida y explica qué puedes registrar.",
+        s3_title: "Registra lo que quieras — cuando quieras",
+        s3_desc: '"Almorcé ensalada", "Me siento cansado", "Corrí 5km" — BioVibe lo gestiona todo.',
+        s4_title: "Recibe insights de vuelta",
+        s4_desc: "Después de cada mensaje, BioVibe comparte un insight personalizado basado en tu historial.",
+        footer: 'BioVibe · Creado en el Hackathon 2026 · <a href="https://github.com/alex-felixpagos/consumer-payments-hackathon" target="_blank">GitHub</a>',
+      },
+      pt: {
+        badge: "Hackathon MVP",
+        powered: "Desenvolvido com Gemini 1.5 Flash",
+        headline: "Sua Saúde,<br /><span>Rastreada por IA</span>",
+        subheadline: "Envie um áudio ou uma mensagem rápida. O BioVibe registra suas refeições, sintomas, sono e humor — e te diz o que tudo isso significa.",
+        cta: "Começar no WhatsApp →",
+        cta_hint: "Abre o WhatsApp com uma mensagem pronta para enviar",
+        cta_url: "https://wa.me/56920403095?text=Oi%20BioVibe%2C%20estou%20pronto%20para%20come%C3%A7ar%20a%20monitorar%20minha%20sa%C3%BAde%21",
+        f1_title: "Voz ou Texto",
+        f1_desc: "Fale naturalmente — sem formulários, sem apps, sem fricção. Envie um áudio ou escreva algumas palavras.",
+        f2_title: "Memória com IA",
+        f2_desc: "O BioVibe lembra de tudo que você compartilha — refeições, sintomas, sono, humor — construindo sua linha do tempo de saúde.",
+        f3_title: "Insights Proativos",
+        f3_desc: "Padrões que você nunca notaria sozinho. O BioVibe conecta os pontos e te diz o que seus dados realmente significam.",
+        how_title: "Como funciona",
+        s1_title: "Clique no botão acima",
+        s1_desc: "O WhatsApp abre com seu número e uma primeira mensagem já carregada.",
+        s2_title: "Envie sua primeira mensagem",
+        s2_desc: "O BioVibe te dá as boas-vindas e explica o que você pode registrar.",
+        s3_title: "Registre qualquer coisa — a qualquer hora",
+        s3_desc: '"Almocei salada", "Estou cansado", "Corri 5km" — o BioVibe cuida de tudo.',
+        s4_title: "Receba insights de volta",
+        s4_desc: "Após cada mensagem, o BioVibe compartilha um insight personalizado baseado no seu histórico.",
+        footer: 'BioVibe · Criado no Hackathon 2026 · <a href="https://github.com/alex-felixpagos/consumer-payments-hackathon" target="_blank">GitHub</a>',
+      },
+    };
+
+    let currentLang = "en";
+
+    function setLang(lang) {
+      currentLang = lang;
+      const t = TRANSLATIONS[lang];
+
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (t[key] !== undefined) el.innerHTML = t[key];
+      });
+
+      document.getElementById("cta-link").href = t.cta_url;
+      document.documentElement.lang = lang;
+
+      document.querySelectorAll(".lang-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.textContent.toLowerCase() === lang);
+      });
+    }
+
+    // Auto-detect browser language on load
+    const browserLang = navigator.language?.slice(0, 2).toLowerCase();
+    if (["es", "pt"].includes(browserLang)) setLang(browserLang);
+  </script>
+
+</body>
+</html>

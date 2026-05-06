@@ -53,6 +53,22 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         text or f"<{msg.type} — no text extracted>",
     )
 
+    _WELCOME_TRIGGER = "hey biovibe, i'm ready to start tracking my health!"
+    if text and text.strip().lower() == _WELCOME_TRIGGER:
+        welcome = (
+            "Welcome to BioVibe! 🌱\n\n"
+            "I'm your personal health tracking assistant. Here's what you can do:\n\n"
+            "• Tell me what you ate: \"Had oatmeal and coffee for breakfast\"\n"
+            "• Log how you feel: \"I have a mild headache since noon\"\n"
+            "• Track your workout: \"Ran 5km this morning\"\n"
+            "• Check in on your mood: \"Feeling anxious today\"\n\n"
+            "I'll remember everything and share insights to help you feel your best.\n\n"
+            "What would you like to track first?"
+        )
+        logger.info("OUTBOUND | to=%s message=<welcome>", msg.phone_number)
+        await client.send_whatsapp_message(msg.phone_number, welcome)
+        return
+
     brain = load_brain(user_id)
     logger.info("BRAIN | user=%s log_entries=%d", user_id, len(brain["log_history"]))
 
