@@ -8,7 +8,8 @@ Default demo replies with a fixed template that quotes what they sent. Replace
 import logging
 
 from app.schemas.kapso import KapsoMessage
-from app.services.brain import load_brain
+from app.services.brain import append_log, load_brain, should_refresh_summary, update_summary
+from app.services.gemini_client import GeminiClient
 from app.services.kapso_client import KapsoClient
 
 logger = logging.getLogger(__name__)
@@ -32,14 +33,6 @@ def inbound_text(msg: KapsoMessage) -> str | None:
     return None
 
 
-def _reply_body_for_demo(user_payload: str | None, message_type: str) -> str:
-    if user_payload:
-        quoted = user_payload
-    else:
-        quoted = f"a {message_type} message (send text for a full quote)"
-    return f"I just received: {quoted}. Lets start building 🚀"
-
-
 async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     """
     Called for each *inbound* message after webhook verification.
@@ -59,8 +52,24 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     brain = load_brain(user_id)
     logger.info("BRAIN | user=%s log_entries=%d", user_id, len(brain["log_history"]))
 
-    body = _reply_body_for_demo(text, msg.type)
+    gemini = GeminiClient()
+    result = await gemini.process_message(text or "", msg.type, brain)
+    intent = result.get("intent", "unrecognized")
 
-    logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, body)
+    logger.info("GEMINI | intent=%s category=%s", intent, result.get("category"))
 
-    await client.send_whatsapp_message(msg.phone_number, body)
+    if intent == "log":
+        updated_brain = append_log(user_id, {
+            "category": result.get("category"),
+            "raw_input": text or "",
+            "media_type": msg.type,
+            "structured": result.get("structured", {}),
+        })
+        if should_refresh_summary(updated_brain):
+            new_summary = await gemini.summarize_brain(updated_brain)
+            update_summary(user_id, new_summary)
+            logger.info("BRAIN | summary refreshed for user=%s", user_id)
+
+    reply = result.get("reply", "")
+    logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, reply)
+    await client.send_whatsapp_message(msg.phone_number, reply)
