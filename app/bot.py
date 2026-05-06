@@ -78,6 +78,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
 
     logger.info("GEMINI | intent=%s category=%s", intent, result.get("category"))
 
+    # Always save profile info if present, regardless of intent
+    pu = result.get("profile_update") or {}
+    pu_name = pu.get("name")
+    pu_traits = pu.get("traits") or []
+    if pu_name or pu_traits:
+        update_profile(user_id, name=pu_name, traits=pu_traits)
+        logger.info("BRAIN | profile updated for user=%s name=%s traits=%s", user_id, pu_name, pu_traits)
+
     if intent == "log":
         updated_brain = append_log(user_id, {
             "category": result.get("category"),
@@ -89,14 +97,6 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             new_summary = await gemini.summarize_brain(updated_brain)
             update_summary(user_id, new_summary)
             logger.info("BRAIN | summary refreshed for user=%s", user_id)
-    elif intent == "profile_update":
-        pu = result.get("profile_update", {})
-        update_profile(
-            user_id,
-            name=pu.get("name"),
-            traits=pu.get("traits", []),
-        )
-        logger.info("BRAIN | profile updated for user=%s", user_id)
 
     reply = result.get("reply", "")
     logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, reply)
