@@ -37,6 +37,7 @@ def test_parse_command_exact() -> None:
     assert dc.parse_command("hello") == "hello"
     assert dc.parse_command("HELLO") == "hello"
     assert dc.parse_command("menu") == "menu"
+    assert dc.parse_command("help_principal") == "help principal"
     assert dc.parse_command("help principal") == "help principal"
     assert dc.parse_command("demo shortfall") == "demo shortfall"
 
@@ -51,6 +52,13 @@ def test_parse_budget_triple() -> None:
     assert t == (3000.0, 1800.0, 500.0)
 
 
+def test_parse_first_amount() -> None:
+    assert dc.parse_first_amount("3000") == 3000.0
+    assert dc.parse_first_amount("$3,000.50") == 3000.50
+    assert dc.parse_first_amount("about 4200 per month") == 4200.0
+    assert dc.parse_first_amount("no numbers") is None
+
+
 def test_parse_money_and_rest() -> None:
     amt, due = dc._parse_money_and_rest("$450 due May 15")
     assert amt == 450.0
@@ -63,23 +71,35 @@ def test_happy_path_build_reply() -> None:
     assert "debt" in welcome and ("glad" in welcome or "here" in welcome)
     assert dc.build_reply(phone, "Credit card").startswith("Thanks")
     body = dc.build_reply(phone, "$450 due May 15")
-    assert "3000" in body or "income" in body.lower()
-    final = dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
+    assert "step 1" in body.lower() and "income" in body.lower()
+    assert "step 2" in dc.build_reply(phone, "3000").lower()
+    assert "step 3" in dc.build_reply(phone, "1800").lower()
+    final = dc.build_reply(phone, "500")
     assert "payment plan is ready" in final.lower()
     assert "simulated envelope" in final.lower()
-    assert "type **envelope**" not in final
 
 
-def test_budget_summary_response_has_reminder_button() -> None:
+def test_budget_one_line_shortcut_on_income_step() -> None:
+    phone = "+10000000006"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Card")
+    dc.build_reply(phone, "$450 due May 15")
+    final = dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
+    assert "payment plan is ready" in final.lower()
+
+
+def test_budget_summary_response_has_next_step_buttons() -> None:
     phone = "+10000000004"
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
     dc.build_reply(phone, "$450 due May 15")
+    dc.build_reply(phone, "3000")
+    dc.build_reply(phone, "1800")
+    response = dc.build_response(phone, "500")
 
-    response = dc.build_response(phone, "Income 3000, essentials 1800, flexible 500")
-
-    assert response.buttons == (dc.ReplyButton(id="reminder", title="Show reminder"),)
-    assert "Next, I can show the day-before payment reminder." in response.body
+    ids = {b.id for b in response.buttons}
+    assert ids == {"envelope", "reminder", "help_principal"}
+    assert "Tap a button" in response.body or "envelope" in response.body.lower()
 
 
 def test_show_reminder_button_title_routes_to_reminder() -> None:
@@ -115,7 +135,9 @@ def test_help_principal_demo_shortfall() -> None:
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
     dc.build_reply(phone, "$450 due May 15")
-    dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
+    dc.build_reply(phone, "3000")
+    dc.build_reply(phone, "1800")
+    dc.build_reply(phone, "500")
     dc.build_reply(phone, "demo shortfall")
     out = dc.build_reply(phone, "help principal")
     assert "120" in out
@@ -128,7 +150,9 @@ def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
     dc.build_reply(phone, "$450 due May 15")
-    dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
+    dc.build_reply(phone, "3000")
+    dc.build_reply(phone, "1800")
+    dc.build_reply(phone, "500")
     dc.build_reply(phone, "demo shortfall")
 
     out = dc.build_reply(phone, "I can't cover principal")

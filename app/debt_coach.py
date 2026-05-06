@@ -37,7 +37,9 @@ class CoachStep(str, Enum):
     IDLE = "idle"
     WAITING_DEBT_NAME = "waiting_debt_name"
     WAITING_AMOUNT_DUE = "waiting_amount_due"
-    WAITING_BUDGET = "waiting_budget"
+    WAITING_BUDGET_INCOME = "waiting_budget_income"
+    WAITING_BUDGET_ESSENTIALS = "waiting_budget_essentials"
+    WAITING_BUDGET_FLEXIBLE = "waiting_budget_flexible"
     READY = "ready"
 
 
@@ -128,6 +130,8 @@ def parse_command(text: str) -> str | None:
         return _CMD_DEMO_SHORTFALL
     if t in {"show reminder", "show the reminder", "show_reminder"}:
         return "reminder"
+    if t == "help_principal" or t.startswith("help_principal "):
+        return _CMD_HELP_PRINCIPAL
     token = t.split()[0]
     if token in {"start", "hello", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
         return token
@@ -159,7 +163,9 @@ def should_run_intent_fallback(session: UserSession) -> bool:
     """When ``False``, skip LLM intent — user is likely sending amount/budget answers."""
     return session.step not in (
         CoachStep.WAITING_AMOUNT_DUE,
-        CoachStep.WAITING_BUDGET,
+        CoachStep.WAITING_BUDGET_INCOME,
+        CoachStep.WAITING_BUDGET_ESSENTIALS,
+        CoachStep.WAITING_BUDGET_FLEXIBLE,
     )
 
 
@@ -180,6 +186,21 @@ def _parse_money_and_rest(text: str) -> tuple[float | None, str | None]:
     if not due:
         due = rest or None
     return amount, due
+
+
+def parse_first_amount(text: str) -> float | None:
+    """First money-like number in ``text`` (e.g. ``3000``, ``$3,000.50``)."""
+    m = re.search(r"\$?\s*([\d,]+(?:\.\d+)?)", text.strip())
+    if not m:
+        return None
+    raw = m.group(1).replace(",", "")
+    try:
+        v = float(raw)
+    except ValueError:
+        return None
+    if v < 0:
+        return None
+    return v
 
 
 def parse_budget_triple(text: str) -> tuple[float, float, float] | None:
@@ -210,7 +231,7 @@ def _menu_text() -> str:
         "• hello — same warm welcome as start\n"
         "• menu — this list\n"
         "• goal — jump to amount & due date (after debt name)\n"
-        "• budget — enter income & buckets\n"
+        "• budget — (re)enter income in 3 short steps\n"
         "• envelope — simulated envelope + illustrative yield\n"
         "• reminder — simulated day-before nudge\n"
         f"• {_CMD_HELP_PRINCIPAL} — shortfall ideas (general, not advice)\n"
@@ -257,14 +278,88 @@ def _cmd_goal(session: UserSession) -> str:
     )
 
 
+def _prompt_budget_income() -> str:
+    return (
+        "*Step 1 of 3:* What’s your *monthly income* (take-home)? "
+        "Reply with one number (e.g. *3000* or *$3,000*)."
+    )
+
+
+def _prompt_budget_essentials() -> str:
+    return (
+        "*Step 2 of 3:* How much goes to *essentials* each month? "
+        "(Rent, utilities, groceries, transport — one total number.)"
+    )
+
+
+def _prompt_budget_flexible() -> str:
+    return (
+        "*Step 3 of 3:* How much is *flexible spending*? "
+        "(Dining out, subscriptions, fun — rough total is fine.)"
+    )
+
+
+def _begin_budget_flow(session: UserSession) -> str:
+    session.income = None
+    session.essentials = None
+    session.flexible = None
+    session.step = CoachStep.WAITING_BUDGET_INCOME
+    return (
+        "Let’s do your budget in *three easy messages* — one number at a time.\n\n"
+        f"{_prompt_budget_income()}"
+    )
+
+
+def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
+    """Summary after income, essentials, and flexible are set."""
+    avail = session.available_after_buckets()
+    assert avail is not None
+    goal = session.payment_amount or 0.0
+    income = session.income or 0.0
+    essentials = session.essentials or 0.0
+    flexible = session.flexible or 0.0
+    fits = avail >= goal
+    session.step = CoachStep.READY
+    fit_line = (
+        f"Your ${goal:,.2f} goal looks feasible with ${avail:,.2f} available."
+        if fits
+        else (
+            f"You have ${avail:,.2f} available toward a ${goal:,.2f} goal. "
+            "That is tight; consider adjusting buckets or the goal."
+        )
+    )
+    debt = session.debt_label or "Debt"
+    illustrative = round(goal * 0.001, 2)
+    return CoachReply(
+        body=(
+            "Great, your payment plan is ready.\n\n"
+            f"Debt: {debt}\n"
+            f"Due: {session.due_date}\n"
+            f"Payment goal: ${goal:,.2f}\n\n"
+            "Monthly plan:\n"
+            f"Income: ${income:,.2f}\n"
+            f"Essentials: ${essentials:,.2f}\n"
+            f"Flexible spending: ${flexible:,.2f}\n"
+            f"Available for payment: ${avail:,.2f}\n\n"
+            f"{fit_line}\n\n"
+            "Simulated envelope:\n"
+            f"${goal:,.2f} set aside for this payment.\n"
+            f"Estimated illustrative yield this month: ~${illustrative:,.2f}.\n"
+            "This is simulated only, not a real account or guaranteed return.\n\n"
+            "Tap a button for the next step, or type *envelope*, *reminder*, or *help principal*."
+        ),
+        buttons=(
+            ReplyButton(id="envelope", title="Envelope"),
+            ReplyButton(id="reminder", title="Reminder"),
+            ReplyButton(id="help_principal", title="Principal help"),
+        ),
+    )
+
+
 def _cmd_budget(session: UserSession) -> str:
     if _needs_setup(session):
         return 'Set your payment first (say start, then name the debt and amount like "$450 due May 15").'
-    session.step = CoachStep.WAITING_BUDGET
-    return (
-        "What’s your monthly income, essentials, and flexible spending?\n"
-        "Example: Income 3000, essentials 1800, flexible 500"
-    )
+    return _begin_budget_flow(session)
 
 
 def _cmd_envelope(session: UserSession) -> str:
@@ -364,58 +459,50 @@ def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
             return 'I need an amount and a due date. Try: "$450 due May 15"'
         session.payment_amount = amt
         session.due_date = due
-        session.step = CoachStep.WAITING_BUDGET
+        session.income = None
+        session.essentials = None
+        session.flexible = None
+        session.step = CoachStep.WAITING_BUDGET_INCOME
         return (
-            "What’s your monthly income, essentials, and flexible spending?\n"
-            "Example: Income 3000, essentials 1800, flexible 500"
+            "Nice — got your payment details.\n\n"
+            f"{_prompt_budget_income()}"
         )
 
-    if session.step == CoachStep.WAITING_BUDGET:
+    if session.step == CoachStep.WAITING_BUDGET_INCOME:
         triple = parse_budget_triple(raw)
-        if not triple:
+        if triple:
+            session.income, session.essentials, session.flexible = triple
+            return _finalize_budget_coach_reply(session)
+        val = parse_first_amount(raw)
+        if val is None:
             return (
-                "Please use: Income 3000, essentials 1800, flexible 500 "
-                "(you can tweak the numbers)."
+                "I didn’t catch a number. Try something like *3000* or *$3,000*.\n\n"
+                f"{_prompt_budget_income()}"
             )
-        income, essentials, flexible = triple
-        session.income = income
-        session.essentials = essentials
-        session.flexible = flexible
-        avail = session.available_after_buckets()
-        assert avail is not None
-        goal = session.payment_amount or 0.0
-        fits = avail >= goal
-        session.step = CoachStep.READY
-        fit_line = (
-            f"Your ${goal:,.2f} goal looks feasible with ${avail:,.2f} available."
-            if fits
-            else (
-                f"You have ${avail:,.2f} available toward a ${goal:,.2f} goal. "
-                "That is tight; consider adjusting buckets or the goal."
+        session.income = val
+        session.step = CoachStep.WAITING_BUDGET_ESSENTIALS
+        return _prompt_budget_essentials()
+
+    if session.step == CoachStep.WAITING_BUDGET_ESSENTIALS:
+        val = parse_first_amount(raw)
+        if val is None:
+            return (
+                "Please send one number for essentials (e.g. *1800*).\n\n"
+                f"{_prompt_budget_essentials()}"
             )
-        )
-        debt = session.debt_label or "Debt"
-        illustrative = round(goal * 0.001, 2)
-        return CoachReply(
-            body=(
-                "Great, your payment plan is ready.\n\n"
-                f"Debt: {debt}\n"
-                f"Due: {session.due_date}\n"
-                f"Payment goal: ${goal:,.2f}\n\n"
-                "Monthly plan:\n"
-                f"Income: ${income:,.2f}\n"
-                f"Essentials: ${essentials:,.2f}\n"
-                f"Flexible spending: ${flexible:,.2f}\n"
-                f"Available for payment: ${avail:,.2f}\n\n"
-                f"{fit_line}\n\n"
-                "Simulated envelope:\n"
-                f"${goal:,.2f} set aside for this payment.\n"
-                f"Estimated illustrative yield this month: ~${illustrative:,.2f}.\n"
-                "This is simulated only, not a real account or guaranteed return.\n\n"
-                "Next, I can show the day-before payment reminder."
-            ),
-            buttons=(ReplyButton(id="reminder", title="Show reminder"),),
-        )
+        session.essentials = val
+        session.step = CoachStep.WAITING_BUDGET_FLEXIBLE
+        return _prompt_budget_flexible()
+
+    if session.step == CoachStep.WAITING_BUDGET_FLEXIBLE:
+        val = parse_first_amount(raw)
+        if val is None:
+            return (
+                "Please send one number for flexible spending (e.g. *500*).\n\n"
+                f"{_prompt_budget_flexible()}"
+            )
+        session.flexible = val
+        return _finalize_budget_coach_reply(session)
 
     # READY / IDLE: gentle recovery
     return (
@@ -491,8 +578,8 @@ def build_outbound(
     if cmd in ("start", "hello"):
         return _welcome_outbound(session)
     if cmd:
-        return CoachOutbound(text=_route_command(cmd, session))
-    return CoachOutbound(text=_route_conversation(raw, session))
+        return _to_outbound(_route_command(cmd, session))
+    return _to_outbound(_route_conversation(raw, session))
 
 
 def build_response(phone: str, text: str | None) -> CoachReply:
