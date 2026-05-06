@@ -1,10 +1,10 @@
 """
 Inbound WhatsApp handling: reply to users via Kapso.
 
-Delegates copy to ``app.debt_coach.build_response`` (state machine + commands).
+Delegates to ``app.debt_coach.build_outbound`` (state machine + commands; welcome uses buttons).
 """
 
-from app.debt_coach import build_response
+from app.debt_coach import build_outbound
 from app.schemas.kapso import KapsoMessage
 from app.services.kapso_client import KapsoClient
 
@@ -17,7 +17,11 @@ def inbound_text(msg: KapsoMessage) -> str | None:
         button_reply = msg.interactive.get("button_reply") or {}
         list_reply = msg.interactive.get("list_reply") or {}
         if button_reply:
-            return button_reply.get("title") or button_reply.get("id")
+            # Prefer stable button ids over titles so commands (start, menu) match reliably.
+            bid = button_reply.get("id")
+            if bid:
+                return bid
+            return button_reply.get("title")
         if list_reply:
             return list_reply.get("title") or list_reply.get("id")
     if msg.button:
@@ -34,12 +38,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
     """
     text = inbound_text(msg)
-    response = build_response(msg.phone_number, text)
-    if response.buttons:
+    out = build_outbound(msg.phone_number, text)
+    if out.buttons:
         await client.send_interactive_buttons(
             msg.phone_number,
-            response.body,
-            [{"id": button.id, "title": button.title} for button in response.buttons],
+            out.text,
+            [{"id": b["id"], "title": b["title"]} for b in out.buttons],
+            header=out.header,
+            footer=out.footer,
         )
-        return
-    await client.send_whatsapp_message(msg.phone_number, response.body)
+    else:
+        await client.send_whatsapp_message(msg.phone_number, out.text)

@@ -15,6 +15,23 @@ from typing import Final
 # Keyed by Kapso/WA ``from`` number (string).
 _sessions: dict[str, "UserSession"] = {}
 
+# Interactive welcome: id must stay ``begin`` so we don't treat a tap as typed ``start`` (reset).
+_BTN_BEGIN_ID: Final = "begin"
+
+
+@dataclass(frozen=True)
+class CoachOutbound:
+    """Plain text or interactive (WhatsApp reply buttons; max 3)."""
+
+    text: str
+    buttons: tuple[dict[str, str], ...] = ()
+    header: str | None = None
+    footer: str | None = None
+
+    @property
+    def has_buttons(self) -> bool:
+        return bool(self.buttons)
+
 
 class CoachStep(str, Enum):
     IDLE = "idle"
@@ -112,7 +129,7 @@ def parse_command(text: str) -> str | None:
     if t in {"show reminder", "show the reminder", "show_reminder"}:
         return "reminder"
     token = t.split()[0]
-    if token in {"start", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
+    if token in {"start", "hello", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
         return token
     return None
 
@@ -161,6 +178,7 @@ def _menu_text() -> str:
     return (
         "Commands:\n"
         "• start — begin / reset\n"
+        "• hello — same warm welcome as start\n"
         "• menu — this list\n"
         "• goal — jump to amount & due date (after debt name)\n"
         "• budget — enter income & buckets\n"
@@ -171,10 +189,27 @@ def _menu_text() -> str:
     )
 
 
-def _cmd_start(session: UserSession) -> str:
+def _welcome_outbound(session: UserSession) -> CoachOutbound:
     session.reset()
     session.step = CoachStep.WAITING_DEBT_NAME
-    return "I can help you plan a debt payment. What debt are we planning for?"
+    body = (
+        "Hey — glad you're here. 💛\n\n"
+        "Money stress is *so* common, and you don't have to sort it out alone in your head. "
+        "I'm a tiny coach inside WhatsApp: we'll pick **one payment** you're aiming for, "
+        "do a **quick 3-line budget** check, and (only if you want) peek at a **simulated** "
+        "“envelope” and gentle reminders — **no real money moves here**, just clarity.\n\n"
+        "Whenever you're ready, tell me **which debt** we're planning for "
+        "(e.g. *credit card*, *car loan*). You can type it, or tap **Start** below for a nudge."
+    )
+    return CoachOutbound(
+        text=body,
+        buttons=(
+            {"id": _BTN_BEGIN_ID, "title": "Start"},
+            {"id": "menu", "title": "Menu"},
+        ),
+        header="Hi there 👋",
+        footer="Simulated demo — not financial advice.",
+    )
 
 
 def _cmd_menu(_session: UserSession) -> str:
@@ -261,9 +296,9 @@ def _cmd_demo_shortfall(session: UserSession) -> str:
     )
 
 
-def _route_command(cmd: str, session: UserSession) -> str | CoachReply:
-    if cmd == "start":
-        return _cmd_start(session)
+def _route_command(cmd: str, session: UserSession) -> str | CoachReply | CoachOutbound:
+    if cmd in ("start", "hello"):
+        return _welcome_outbound(session)
     if cmd == "menu":
         return _cmd_menu(session)
     if cmd == "goal":
@@ -284,7 +319,7 @@ def _route_command(cmd: str, session: UserSession) -> str | CoachReply:
 def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
     raw = text.strip()
     if session.step == CoachStep.IDLE:
-        return "Type **start** to plan a payment, or **menu** for commands."
+        return "Type **start** or **hello** for the welcome message, or **menu** for commands."
 
     if session.step == CoachStep.WAITING_DEBT_NAME:
         session.debt_label = raw
@@ -361,6 +396,68 @@ def _route_conversation(text: str, session: UserSession) -> str | CoachReply:
     )
 
 
+def _reply_begin_tap(session: UserSession) -> CoachOutbound | None:
+    """Handle the welcome ``Start`` button (id ``begin``) without resetting the session."""
+    if session.step != CoachStep.WAITING_DEBT_NAME or session.debt_label:
+        return None
+    return CoachOutbound(
+        text=(
+            "Love that energy. ✨\n\n"
+            "**Which debt are we focusing on first?** "
+            "Reply with a short name (for example: *Credit card* or *Car loan*)."
+        )
+    )
+
+
+def _to_outbound(routed: str | CoachReply | CoachOutbound) -> CoachOutbound:
+    if isinstance(routed, CoachOutbound):
+        return routed
+    if isinstance(routed, CoachReply):
+        return CoachOutbound(
+            text=routed.body,
+            buttons=tuple({"id": button.id, "title": button.title} for button in routed.buttons),
+        )
+    return CoachOutbound(text=routed)
+
+
+def _to_reply(routed: str | CoachReply | CoachOutbound) -> CoachReply:
+    if isinstance(routed, CoachReply):
+        return routed
+    if isinstance(routed, CoachOutbound):
+        return CoachReply(
+            body=routed.text,
+            buttons=tuple(ReplyButton(id=button["id"], title=button["title"]) for button in routed.buttons),
+        )
+    return CoachReply(body=routed)
+
+
+def build_outbound(phone: str, text: str | None) -> CoachOutbound:
+    """
+    Latest inbound ``text`` for ``phone`` → outbound payload (text and optional buttons).
+    """
+    if text is None or not text.strip():
+        return CoachOutbound(
+            text="Send a message when you're ready — type **start**, **hello**, or **menu**, or tap a button if you see one."
+        )
+
+    raw = text.strip()
+    session = get_session(phone)
+
+    if raw.lower() == _BTN_BEGIN_ID:
+        begin_out = _reply_begin_tap(session)
+        if begin_out:
+            return begin_out
+
+    cmd = parse_command(raw)
+    if cmd in ("start", "hello"):
+        return _welcome_outbound(session)
+    if cmd:
+        routed = _route_command(cmd, session)
+    else:
+        routed = _route_conversation(raw, session)
+    return _to_outbound(routed)
+
+
 def build_response(phone: str, text: str | None) -> CoachReply:
     """
     Main entry: latest inbound text for ``phone`` → outbound response.
@@ -368,15 +465,20 @@ def build_response(phone: str, text: str | None) -> CoachReply:
     if text is None or not text.strip():
         return CoachReply("Send text to continue — try: start or menu")
 
+    raw = text.strip()
     session = get_session(phone)
-    cmd = parse_command(text)
+
+    if raw.lower() == _BTN_BEGIN_ID:
+        begin_out = _reply_begin_tap(session)
+        if begin_out:
+            return _to_reply(begin_out)
+
+    cmd = parse_command(raw)
     if cmd:
         routed = _route_command(cmd, session)
     else:
-        routed = _route_conversation(text, session)
-    if isinstance(routed, CoachReply):
-        return routed
-    return CoachReply(routed)
+        routed = _route_conversation(raw, session)
+    return _to_reply(routed)
 
 
 def build_reply(phone: str, text: str | None) -> str:

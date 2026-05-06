@@ -15,6 +15,8 @@ def _clear_sessions() -> None:
 def test_parse_command_exact() -> None:
     assert dc.parse_command("  START ") == "start"
     assert dc.parse_command("start") == "start"
+    assert dc.parse_command("hello") == "hello"
+    assert dc.parse_command("HELLO") == "hello"
     assert dc.parse_command("menu") == "menu"
     assert dc.parse_command("help principal") == "help principal"
     assert dc.parse_command("demo shortfall") == "demo shortfall"
@@ -38,7 +40,8 @@ def test_parse_money_and_rest() -> None:
 
 def test_happy_path_build_reply() -> None:
     phone = "+10000000001"
-    assert "plan a debt payment" in dc.build_reply(phone, "start").lower()
+    welcome = dc.build_reply(phone, "start").lower()
+    assert "debt" in welcome and ("glad" in welcome or "here" in welcome)
     assert dc.build_reply(phone, "Credit card").startswith("Thanks")
     body = dc.build_reply(phone, "$450 due May 15")
     assert "3000" in body or "income" in body.lower()
@@ -62,6 +65,30 @@ def test_budget_summary_response_has_reminder_button() -> None:
 
 def test_show_reminder_button_title_routes_to_reminder() -> None:
     assert dc.parse_command("Show reminder") == "reminder"
+
+
+def test_welcome_outbound_has_buttons() -> None:
+    phone = "+10000000003"
+    out = dc.build_outbound(phone, "start")
+    assert out.has_buttons
+    assert any(b["id"] == "begin" for b in out.buttons)
+    assert any(b["id"] == "menu" for b in out.buttons)
+
+
+def test_hello_same_welcome_as_start() -> None:
+    phone = "+10000000005"
+    out_hello = dc.build_outbound(phone, "hello")
+    dc.clear_all_sessions_for_tests()
+    out_start = dc.build_outbound(phone, "start")
+    assert out_hello.text == out_start.text
+    assert out_hello.buttons == out_start.buttons
+
+
+def test_begin_tap_nudges_debt_question() -> None:
+    phone = "+10000000004"
+    dc.build_outbound(phone, "start")
+    out = dc.build_outbound(phone, "begin")
+    assert "which debt" in out.text.lower()
 
 
 def test_help_principal_demo_shortfall() -> None:
