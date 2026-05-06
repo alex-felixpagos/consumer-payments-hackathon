@@ -1,7 +1,7 @@
 # BioVibe – AI-Driven Biohacking Assistant
 
-**Status:** Draft / Hackathon MVP  
-**Stack:** Gemini 1.5 Flash · FastAPI · WhatsApp (Kapso) · Ngrok
+**Status:** Hackathon MVP — Shipped  
+**Stack:** Gemini 1.5 Flash · FastAPI · WhatsApp (Kapso) · Ngrok · Multilingual Landing Page (Netlify)
 
 ---
 
@@ -9,11 +9,34 @@
 
 ```mermaid
 sequenceDiagram
-    actor User as User on WhatsApp
+    actor User as User
+    participant Site as Landing Page
+    participant WA as WhatsApp
     participant Kapso as Kapso API
     participant API as FastAPI bot.py
     participant Gemini as Gemini 1.5 Flash
     participant Brain as JSON Brain
+
+    User->>Site: Visits biovibe site (EN / ES / PT)
+    Site->>WA: Opens WhatsApp with pre-filled message
+    WA->>Kapso: Sends welcome trigger message
+    Kapso->>API: POST /webhooks/whatsapp
+    API->>Brain: load_brain(user_id) + save lang
+    API->>Kapso: send_media_message (hero image)
+    API->>Kapso: send_interactive_buttons (welcome + profile button)
+    Kapso->>WA: Hero image + welcome message in user's language
+
+    alt User taps "Set up my profile"
+        WA->>Kapso: button_reply = setup_profile
+        Kapso->>API: POST /webhooks/whatsapp
+        API->>Brain: load_brain — check existing profile
+        alt Profile exists
+            API->>Kapso: send profile summary
+        else No profile yet
+            API->>Kapso: send profile setup prompt
+        end
+        Kapso->>WA: Profile info or setup guide
+    end
 
     User->>Kapso: Sends text, voice note, or image
     Note over Kapso: Transcribes audio automatically; provides image URL for images
@@ -38,7 +61,8 @@ sequenceDiagram
     end
 
     API->>Kapso: send_whatsapp_message(reply)
-    Kapso->>User: BioVibe reply + insight
+    API->>Kapso: send_interactive_buttons (quick-log suggestions)
+    Kapso->>WA: BioVibe reply + insight + 3 contextual quick-log buttons
 ```
 
 ---
@@ -111,7 +135,20 @@ Unlike a standard chatbot, BioVibe:
 
 ## 4. Functional Requirements
 
-### FR1 – Multimodal Ingestion
+### FR1 – Onboarding & Landing Page
+
+- A static multilingual landing page (`web/index.html`) serves as the public entry point to BioVibe.
+- Available in **English, Spanish, and Portuguese** with auto-detection of the browser language and a manual switcher.
+- A WhatsApp CTA button pre-fills a language-specific trigger message (e.g. *"Oi BioVibe, estou pronto para começar a monitorar minha saúde!"*) that deeplinks directly to the bot.
+- When the bot receives the trigger message it:
+  1. Detects the language and persists it to the user's brain (`lang` field).
+  2. Sends the **BioVibe hero image** as a visual brand touchpoint.
+  3. Sends a **multilingual interactive message** with a "Set up my profile" button.
+- Tapping **"Set up my profile"**:
+  - If a profile already exists → displays name and traits saved so far.
+  - If no profile exists → sends a conversational prompt asking for name, dietary restrictions, allergies, and health goals.
+
+### FR2 – Multimodal Ingestion
 
 - Accept voice notes (`.ogg` / `.mp3`), plain text, and images via WhatsApp.
 - Kapso transcribes audio automatically and delivers the transcript alongside the message — no separate transcription step needed.
@@ -120,7 +157,7 @@ Unlike a standard chatbot, BioVibe:
 - Gemini Vision identifies health-relevant content in images: food, meals, workout screens, body metrics, nutrition labels, etc.
 - `media_type` is recorded as `"image"` in the log entry.
 
-### FR2 – Intent Recognition
+### FR3 – Intent Recognition
 
 Before any logging or response, the system must classify the user's input into one of three intents:
 
@@ -131,14 +168,14 @@ Before any logging or response, the system must classify the user's input into o
 | **Unrecognized** | Message is unrelated to the service scope | "Send me a joke", "What's the weather?", "Hello" |
 | **Profile Update** | User shares persistent personal information | "I'm lactose intolerant", "My name is Rodrigo", "I'm vegetarian" |
 
-- **Log intent** → proceed to FR3 (extract structured data, save to Brain, reply with insight)
+- **Log intent** → proceed to FR4 (extract structured data, save to Brain, reply with insight)
 - **Query intent** → answer using the user's history as context; do **not** create a new log entry
 - **Unrecognized intent** → reply with a friendly message explaining what the user can send; do **not** create a log entry
 - **Profile Update intent** → update `profile.name` and/or `profile.traits`; do **not** create a log entry
 
 This prevents polluting the JSON Brain with irrelevant data and ensures the history stays meaningful.
 
-### FR3 – Structured Health Logging
+### FR4 – Structured Health Logging
 
 - Only triggered after a **Log** intent is confirmed (see FR2).
 - Categorize the log into one of: **Nutrition · Symptom · Activity · Sleep · Mood**.
@@ -166,14 +203,15 @@ This prevents polluting the JSON Brain with irrelevant data and ensures the hist
 }
 ```
 
-### FR4 – Persistent Memory (The JSON Brain)
+### FR5 – Persistent Memory (The JSON Brain)
 
-- Maintain one local JSON file per `user_id`.
+- Maintain one local JSON file per `user_id` (phone number).
 - File structure:
 
 ```json
 {
   "user_id": "5511999999999",
+  "lang": "pt",
   "profile": {
     "name": "Rodrigo",
     "traits": ["Lactose Intolerant", "intermittent faster"]
@@ -183,16 +221,32 @@ This prevents polluting the JSON Brain with irrelevant data and ensures the hist
 }
 ```
 
+- `lang` is set from the landing page trigger and drives all bot-initiated copy (welcome, profile prompt, quick-log buttons).
 - The `health_summary` field is regenerated by Gemini every **5 new log entries**.
 
-### FR5 – Proactive Insights (The Biohacker Persona)
+### FR6 – Quick-Log Contextual Buttons
+
+After every **log** or **query** response, the bot sends a secondary interactive message with 3 quick-log buttons tailored to what the user just logged:
+
+| Last logged | Buttons shown |
+|---|---|
+| Nutrition | 🏃 Just exercised · 😴 Log my sleep · 💧 Drank water |
+| Activity  | 🍽️ Log a meal · 😴 Log my sleep · 😊 Log my mood |
+| Sleep     | 😊 Log my mood · 🍽️ Log a meal · 🏃 Just exercised |
+| Symptom   | 🍽️ Log a meal · 😊 Log my mood · 🏃 Just exercised |
+| Mood      | 🍽️ Log a meal · 🏃 Just exercised · 😴 Log my sleep |
+
+- Button labels are fully localised (EN / ES / PT) using the `lang` stored in the brain.
+- Tapping a button sends the button title as a WhatsApp message → Gemini processes it naturally and starts a conversational flow to capture the details.
+
+### FR7 – Proactive Insights (The Biohacker Persona)
 
 - Every response must close with a personalised **Insight** derived from the user's history.
 - Insight must reference at least one past log entry when available.
 
 > **Example:** *"You've reported low energy 30 minutes after eating pasta twice this week. Consider testing a lower-carb lunch tomorrow."*
 
-### FR6 – Image Response Requirements
+### FR8 – Image Response Requirements
 
 Every reply to an image message must contain three parts, in order:
 
@@ -245,6 +299,10 @@ app/
     ├── kapso_client.py      # Async HTTP wrapper for Kapso REST API
     ├── gemini_client.py     # Gemini SDK wrapper — intent, extraction, reply
     └── brain.py             # JSON Brain read/write (synchronous)
+
+web/
+├── index.html               # Multilingual landing page (EN / ES / PT) — deployed on Netlify
+└── biovibe-hero.png         # Brand hero image served via GitHub raw URL
 
 data/                        # Created at runtime — one JSON file per user
 ```
@@ -351,14 +409,21 @@ bot.handle_inbound(msg, client)             (bot.py)
 | US-06 | As a user, I want to send a photo of my workout screen so BioVibe can log my activity metrics automatically. |
 | US-07 | As a user, I want BioVibe to tell me when I'm doing well so I feel motivated to keep going. |
 | US-08 | As a user, I want BioVibe to estimate the calories of my meal automatically so I don't have to look them up myself. |
+| US-09 | As a user, I want to discover BioVibe through a website in my language and start chatting in one tap. |
+| US-10 | As a user, I want to set up my profile (name, diet, goals) once and have BioVibe remember it forever. |
+| US-11 | As a user, I want to see my saved profile at any time by tapping a button — without having to ask. |
+| US-12 | As a user, I want quick-reply buttons after every interaction so I can log my next habit without typing. |
 
 ---
 
 ## 8. Demo Script (Success Metrics)
 
-1. **Zero-UI Magic** — Record a messy voice note → show the resulting structured JSON in the terminal log.
-2. **Memory Demonstration** — Mention a symptom on Saturday → bot recalls a meal from Friday as a potential cause.
-3. **Speed** — End-to-end response time under **3 seconds** using Gemini Flash.
+1. **Landing Page → WhatsApp in one tap** — Open the site in PT/ES/EN, tap the button, show the hero image and welcome message arriving in the correct language with the profile setup button.
+2. **Profile Setup** — Tap "Set up my profile", tell BioVibe your name and a dietary restriction. Tap the button again and see the saved profile displayed back.
+3. **Zero-UI Magic** — Record a messy voice note about lunch → show the structured JSON in the terminal log + calorie estimate in the WhatsApp reply.
+4. **Quick-log buttons** — After the voice note reply, tap "🏃 Just exercised" and show how the bot opens a conversational flow for the workout details.
+5. **Memory Demonstration** — Mention a symptom → bot recalls a relevant meal from the history as a potential cause.
+6. **Speed** — End-to-end response time under **3 seconds** using Gemini Flash.
 
 ---
 
@@ -366,8 +431,10 @@ bot.handle_inbound(msg, client)             (bot.py)
 
 - Apple Health / Google Fit integration
 - Subscription / payment gateways
-- Multi-language support
 - Production WhatsApp Business account onboarding
+- Daily/weekly proactive digest (scheduled push messages)
+- Health Score (0–100 numeric index based on recent logs)
+- PDF/report export ("send me my weekly report")
 
 ---
 
