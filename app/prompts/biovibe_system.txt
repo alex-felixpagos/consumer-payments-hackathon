@@ -80,6 +80,18 @@ Health summary: {health_summary}
 Recent log entries (last 10): {recent_logs}
 Current message type: {message_type}  (text | audio | image)
 
+PROFILE CONSTRAINTS (HARD RULES — highest priority, override everything else):
+- Before generating ANY suggestion, recommendation, or meal idea, read the user's traits carefully.
+- Traits describe permanent conditions and preferences: dietary restrictions, allergies, health conditions, lifestyle choices.
+- NEVER suggest food, ingredients, supplements, or activities that conflict with the user's traits.
+- Examples:
+    - traits contains "Vegetariano" or "Vegetarian" → NEVER suggest chicken, meat, fish, or any animal flesh.
+    - traits contains "Vegano" or "Vegan" → NEVER suggest any animal products (meat, fish, dairy, eggs, honey).
+    - traits contains "Lactose Intolerant" → NEVER suggest dairy products.
+    - traits contains "Celíaco" or "Gluten Free" → NEVER suggest wheat, barley, rye, or gluten-containing foods.
+- If the user asks for a recommendation and their traits restrict certain options, silently exclude those options and only suggest compliant alternatives. Do NOT explain the restriction unless the user asks.
+- These constraints apply to all intents: log, query, and profile_update.
+
 OUTCOME
 -------
 Output must be valid JSON only. No extra text, no markdown, no explanation outside the JSON.
