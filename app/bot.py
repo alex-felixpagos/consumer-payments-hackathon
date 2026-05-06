@@ -71,22 +71,13 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         text or f"<{msg.type} — no text extracted>",
     )
 
-    _WELCOME_TRIGGER = "hey biovibe, i'm ready to start tracking my health!"
-    # Public URL of the hero image — update to your Netlify/GitHub Pages domain after deploy
+    # Public URL of the hero image — update to your Netlify domain after deploy
     _WELCOME_IMAGE_URL = "https://biovibe.netlify.app/biovibe-hero.png"
+    _WELCOME_TRIGGER = "hey biovibe, i'm ready to start tracking my health!"
+    _PROFILE_SETUP_BTN_ID = "setup_profile"
 
     if text and text.strip().lower() == _WELCOME_TRIGGER:
-        welcome = (
-            "Welcome to BioVibe! 🌱\n\n"
-            "I'm your personal health tracking assistant. Here's what you can do:\n\n"
-            "• Tell me what you ate: \"Had oatmeal and coffee for breakfast\"\n"
-            "• Log how you feel: \"I have a mild headache since noon\"\n"
-            "• Track your workout: \"Ran 5km this morning\"\n"
-            "• Check in on your mood: \"Feeling anxious today\"\n\n"
-            "I'll remember everything and share insights to help you feel your best.\n\n"
-            "What would you like to track first?"
-        )
-        logger.info("OUTBOUND | to=%s message=<welcome image + text>", msg.phone_number)
+        logger.info("OUTBOUND | to=%s message=<welcome image + interactive>", msg.phone_number)
         try:
             await client.send_media_message(
                 msg.phone_number,
@@ -96,8 +87,38 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             )
         except Exception:
             logger.warning("Could not send welcome image; falling back to text-only")
-        await client.send_whatsapp_message(msg.phone_number, welcome)
+        await client.send_interactive_buttons(
+            msg.phone_number,
+            body_text=(
+                "Welcome to BioVibe! 🌱\n\n"
+                "I'm your AI health tracking assistant. You can:\n\n"
+                "• Log what you eat, how you feel, workouts, sleep\n"
+                "• Ask health questions and get personalized insights\n"
+                "• Build a health history over time\n\n"
+                "Want to set up your profile first for a more personalized experience?"
+            ),
+            buttons=[{"id": _PROFILE_SETUP_BTN_ID, "title": "Set up my profile ✨"}],
+            footer="Or just start chatting — I learn as we go!",
+        )
         return
+
+    # Handle profile setup button tap
+    if msg.interactive:
+        button_reply = msg.interactive.get("button_reply") or {}
+        if button_reply.get("id") == _PROFILE_SETUP_BTN_ID:
+            logger.info("OUTBOUND | to=%s message=<profile setup prompt>", msg.phone_number)
+            await client.send_whatsapp_message(
+                msg.phone_number,
+                "Great! Tell me a bit about yourself 👤\n\n"
+                "Feel free to share things like:\n\n"
+                "• Your name\n"
+                "• Dietary restrictions (vegan, lactose intolerant, gluten-free…)\n"
+                "• Allergies\n"
+                "• Health goals (lose weight, sleep better, more energy…)\n"
+                "• Any conditions I should know about\n\n"
+                "Just write it naturally — I'll take care of the rest! 🧠",
+            )
+            return
 
     brain = load_brain(user_id)
     logger.info("BRAIN | user=%s log_entries=%d", user_id, len(brain["log_history"]))
