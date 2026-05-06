@@ -74,6 +74,16 @@ def clear_all_sessions_for_tests() -> None:
 
 _CMD_HELP_PRINCIPAL: Final = "help principal"
 _CMD_DEMO_SHORTFALL: Final = "demo shortfall"
+_SHORTFALL_PHRASES: Final = (
+    "can't cover principal",
+    "cant cover principal",
+    "cannot cover principal",
+    "can't afford principal",
+    "cant afford principal",
+    "cannot afford principal",
+    "principal help",
+    "help with principal",
+)
 
 
 def parse_command(text: str) -> str | None:
@@ -82,6 +92,8 @@ def parse_command(text: str) -> str | None:
     if not t:
         return None
     if t == _CMD_HELP_PRINCIPAL or t.startswith(_CMD_HELP_PRINCIPAL + " "):
+        return _CMD_HELP_PRINCIPAL
+    if any(phrase in t for phrase in _SHORTFALL_PHRASES):
         return _CMD_HELP_PRINCIPAL
     if t == _CMD_DEMO_SHORTFALL or t.startswith(_CMD_DEMO_SHORTFALL + " "):
         return _CMD_DEMO_SHORTFALL
