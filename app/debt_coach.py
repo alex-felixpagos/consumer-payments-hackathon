@@ -116,6 +116,7 @@ def clear_all_sessions_for_tests() -> None:
 
 _CMD_HELP_PRINCIPAL: Final = "help principal"
 _CMD_DEMO_SHORTFALL: Final = "demo shortfall"
+_CMD_IM_SHORT: Final = "im short"
 # List row ids from ``menu`` interactive list → same names as ``parse_command`` returns.
 _MENU_LIST_ROW_TO_CMD: Final[dict[str, str]] = {
     "m_start": "start",
@@ -125,10 +126,16 @@ _MENU_LIST_ROW_TO_CMD: Final[dict[str, str]] = {
     "m_budget": "budget",
     "m_envelope": "envelope",
     "m_reminder": "reminder",
+    "m_im_short": _CMD_IM_SHORT,
     "m_help_principal": _CMD_HELP_PRINCIPAL,
     "m_demo_shortfall": _CMD_DEMO_SHORTFALL,
 }
 _SHORTFALL_PHRASES: Final = (
+    "i'm short",
+    "im short",
+    "i am short",
+    "i’m short",
+    "shortfall help",
     "can't cover principal",
     "cant cover principal",
     "cannot cover principal",
@@ -149,14 +156,18 @@ def parse_command(text: str) -> str | None:
         return _MENU_LIST_ROW_TO_CMD[t]
     if t == _CMD_HELP_PRINCIPAL or t.startswith(_CMD_HELP_PRINCIPAL + " "):
         return _CMD_HELP_PRINCIPAL
+    if t == _CMD_IM_SHORT or t.startswith(_CMD_IM_SHORT + " "):
+        return _CMD_IM_SHORT
     if any(phrase in t for phrase in _SHORTFALL_PHRASES):
-        return _CMD_HELP_PRINCIPAL
+        return _CMD_IM_SHORT
     if t == _CMD_DEMO_SHORTFALL or t.startswith(_CMD_DEMO_SHORTFALL + " "):
         return _CMD_DEMO_SHORTFALL
     if t in {"show reminder", "show the reminder", "show_reminder"}:
         return "reminder"
     if t == "help_principal" or t.startswith("help_principal "):
         return _CMD_HELP_PRINCIPAL
+    if t == "im_short" or t.startswith("im_short "):
+        return _CMD_IM_SHORT
     token = t.split()[0]
     if token in {"start", "hello", "menu", "goal", "budget", "envelope", "reminder"} and t == token:
         return token
@@ -178,6 +189,8 @@ def map_intent_label_to_command(intent: str) -> str | None:
         return _CMD_DEMO_SHORTFALL
     if label in {"start", "menu", "goal", "budget", "envelope", "reminder"}:
         return label
+    if label in {"im_short", "shortfall"}:
+        return _CMD_IM_SHORT
     # Router groups greetings with ``start``; treat like ``start`` for welcome.
     if label == "hello":
         return "hello"
@@ -287,6 +300,11 @@ def _menu_list_sections() -> tuple[dict[str, Any], ...]:
             "id": "m_reminder",
             "title": "reminder",
             "description": "Simulated day-before payment nudge",
+        },
+        {
+            "id": "m_im_short",
+            "title": "I'm short",
+            "description": "Show shortfall ideas for the demo",
         },
         {
             "id": "m_help_principal",
@@ -427,12 +445,11 @@ def _finalize_budget_coach_reply(session: UserSession) -> CoachReply:
             f"${goal:,.2f} set aside for this payment.\n"
             f"Estimated illustrative yield this month: ~${illustrative:,.2f}.\n"
             "This is simulated only, not a real account or guaranteed return.\n\n"
-            "Tap a button for the next step, or type *envelope*, *reminder*, or *help principal*."
+            "Tap a button for the next step."
         ),
         buttons=(
-            ReplyButton(id="envelope", title="Envelope"),
-            ReplyButton(id="reminder", title="Reminder"),
-            ReplyButton(id="help_principal", title="Principal help"),
+            ReplyButton(id="reminder", title="Show reminder"),
+            ReplyButton(id="im_short", title="I'm short"),
         ),
     )
 
@@ -463,7 +480,8 @@ def _cmd_reminder(session: UserSession) -> str:
     amt = session.payment_amount
     return (
         f"Reminder (simulated): your {label} payment is due tomorrow ({session.due_date}). "
-        f"Move *${amt:,.2f}* from your simulated envelope to your bank today so you’re ready to pay."
+        f"Move *${amt:,.2f}* from your simulated envelope to your bank today so you’re ready to pay.\n\n"
+        "If covering principal is stressful, tap/try *I'm short*."
     )
 
 
@@ -501,6 +519,21 @@ def _cmd_demo_shortfall(session: UserSession) -> str:
     )
 
 
+def _cmd_im_short(session: UserSession) -> str:
+    goal = session.payment_amount
+    if goal is None:
+        return "Set a payment goal first (start flow)."
+
+    avail = session.effective_available_for_payment()
+    if avail is None:
+        return "Add your budget numbers first, then tap *I'm short* again."
+
+    if goal - avail <= 0:
+        # Keep the hackathon happy path simple: the button shows the $120 shortfall demo.
+        session.available_for_payment_override = 330.0
+    return _cmd_help_principal(session)
+
+
 def _route_command(cmd: str, session: UserSession) -> str | CoachReply | CoachOutbound:
     if cmd in ("start", "hello"):
         return _welcome_outbound(session)
@@ -516,6 +549,8 @@ def _route_command(cmd: str, session: UserSession) -> str | CoachReply | CoachOu
         return _cmd_reminder(session)
     if cmd == _CMD_HELP_PRINCIPAL:
         return _cmd_help_principal(session)
+    if cmd == _CMD_IM_SHORT:
+        return _cmd_im_short(session)
     if cmd == _CMD_DEMO_SHORTFALL:
         return _cmd_demo_shortfall(session)
     return _cmd_menu(session)
