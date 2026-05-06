@@ -8,7 +8,7 @@ Default demo replies with a fixed template that quotes what they sent. Replace
 import logging
 
 from app.schemas.kapso import KapsoMessage
-from app.services.brain import append_log, load_brain, should_refresh_summary, update_summary
+from app.services.brain import append_log, load_brain, should_refresh_summary, update_profile, update_summary
 from app.services.gemini_client import GeminiClient
 from app.services.kapso_client import KapsoClient
 
@@ -29,7 +29,11 @@ def inbound_text(msg: KapsoMessage) -> str | None:
     if msg.button:
         return msg.button.get("text") or msg.button.get("payload")
     if msg.kapso.content:
-        return msg.kapso.content
+        content = msg.kapso.content
+        # Strip audio metadata — keep only the transcript text
+        if "Transcript:" in content:
+            content = content.split("Transcript:", 1)[1].strip()
+        return content
     return None
 
 
@@ -69,6 +73,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
             new_summary = await gemini.summarize_brain(updated_brain)
             update_summary(user_id, new_summary)
             logger.info("BRAIN | summary refreshed for user=%s", user_id)
+    elif intent == "profile_update":
+        pu = result.get("profile_update", {})
+        update_profile(
+            user_id,
+            name=pu.get("name"),
+            traits=pu.get("traits", []),
+        )
+        logger.info("BRAIN | profile updated for user=%s", user_id)
 
     reply = result.get("reply", "")
     logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, reply)

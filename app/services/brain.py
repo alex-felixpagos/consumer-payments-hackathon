@@ -66,3 +66,16 @@ def update_summary(user_id: str, new_summary: str) -> None:
     brain = load_brain(user_id)
     brain["health_summary"] = new_summary
     save_brain(user_id, brain)
+
+
+def update_profile(user_id: str, name: str | None, traits: list[str]) -> dict:
+    brain = load_brain(user_id)
+    if name:
+        brain["profile"]["name"] = name
+    existing_lower = {t.lower() for t in brain["profile"]["traits"]}
+    for trait in traits:
+        if trait.lower() not in existing_lower:
+            brain["profile"]["traits"].append(trait)
+            existing_lower.add(trait.lower())
+    save_brain(user_id, brain)
+    return brain
