@@ -64,14 +64,31 @@ async def receive_webhook(request: Request) -> dict[str, str]:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid signature")
 
     try:
-        webhook = KapsoWebhook.model_validate_json(raw)
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("Webhook body is not valid JSON; acknowledging and ignoring")
+        return {"status": "ignored", "reason": "invalid_json"}
+
+    logger.info("Webhook received: %s", json.dumps(payload)[:2000])
+
+    # Kapso may wrap message events in {"type": "...", "data": {...}} or send the
+    # v2 flat shape directly. Unwrap event envelopes when present and only act on
+    # message-received events; ignore everything else.
+    event_type = payload.get("type") or payload.get("event")
+    body = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+
+    if event_type and "message.received" not in event_type and "message" not in event_type:
+        return {"status": "ignored", "event": event_type}
+
+    try:
+        webhook = KapsoWebhook.model_validate(body)
     except Exception as e:
-        logger.exception("Invalid webhook JSON: %s", e)
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid payload") from e
+        logger.warning("Webhook payload did not match KapsoWebhook schema: %s", e)
+        return {"status": "ignored", "reason": "schema_mismatch"}
 
     msg = webhook.message
     if msg.direction != "inbound":
-        return {"status": "ignored"}
+        return {"status": "ignored", "reason": "not_inbound"}
 
     try:
         client = KapsoClient()
