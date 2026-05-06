@@ -37,6 +37,24 @@ def inbound_text(msg: KapsoMessage) -> str | None:
     return None
 
 
+def inbound_image_url(msg: KapsoMessage) -> tuple[str | None, str]:
+    """Extract image URL and caption from an image message.
+
+    Kapso delivers image messages with a URL embedded in kapso.content
+    following the pattern: 'Image attached (...) URL: https://...'
+    The user's caption (if any) is in msg.image.get('caption').
+    Returns (url, caption).
+    """
+    url: str | None = None
+    content = msg.kapso.content or ""
+    if "URL:" in content:
+        url = content.split("URL:", 1)[1].strip().split()[0]
+    elif msg.image and msg.image.get("link"):
+        url = msg.image["link"]
+    caption = (msg.image or {}).get("caption") or ""
+    return url, caption
+
+
 async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     """
     Called for each *inbound* message after webhook verification.
@@ -73,7 +91,17 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     logger.info("BRAIN | user=%s log_entries=%d", user_id, len(brain["log_history"]))
 
     gemini = GeminiClient()
-    result = await gemini.process_message(text or "", msg.type, brain)
+
+    if msg.type == "image":
+        image_url, caption = inbound_image_url(msg)
+        logger.info("INBOUND IMAGE | url=%s caption=%r", image_url, caption)
+        if image_url:
+            result = await gemini.process_image(image_url, caption, brain)
+        else:
+            logger.warning("Image message received but no URL found — falling back to text flow")
+            result = await gemini.process_message(caption or "", msg.type, brain)
+    else:
+        result = await gemini.process_message(text or "", msg.type, brain)
     intent = result.get("intent", "unrecognized")
 
     logger.info("GEMINI | intent=%s category=%s", intent, result.get("category"))
@@ -87,9 +115,14 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
         logger.info("BRAIN | profile updated for user=%s name=%s traits=%s", user_id, pu_name, pu_traits)
 
     if intent == "log":
+        if msg.type == "image":
+            img_url, img_caption = inbound_image_url(msg)
+            raw_input = f"{img_url} | {img_caption}" if img_caption else (img_url or "")
+        else:
+            raw_input = text or ""
         updated_brain = append_log(user_id, {
             "category": result.get("category"),
-            "raw_input": text or "",
+            "raw_input": raw_input,
             "media_type": msg.type,
             "structured": result.get("structured", {}),
         })

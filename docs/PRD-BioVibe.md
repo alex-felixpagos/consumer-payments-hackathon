@@ -15,8 +15,8 @@ sequenceDiagram
     participant Gemini as Gemini 1.5 Flash
     participant Brain as JSON Brain
 
-    User->>Kapso: Sends text or voice note
-    Note over Kapso: Transcribes audio automatically
+    User->>Kapso: Sends text, voice note, or image
+    Note over Kapso: Transcribes audio automatically; provides image URL for images
     Kapso->>API: POST /webhooks/whatsapp
     API->>Brain: load_brain(user_id)
     Brain-->>API: profile + health_summary + log_history
@@ -103,7 +103,7 @@ Unlike a standard chatbot, BioVibe:
 
 | Capability | Description |
 |---|---|
-| **Multimodal Input** | Accepts voice notes and text; Kapso transcribes audio automatically before it reaches the AI |
+| **Multimodal Input** | Accepts voice notes, text, and images; Kapso transcribes audio automatically; Gemini Vision analyzes image content directly |
 | **State Management** | Maintains an evolving user profile, not just a message log |
 | **Insight Synthesis** | Cross-references today's log with full history to surface patterns |
 
@@ -113,9 +113,12 @@ Unlike a standard chatbot, BioVibe:
 
 ### FR1 – Multimodal Ingestion
 
-- Accept voice notes (`.ogg` / `.mp3`) and plain text messages via WhatsApp.
+- Accept voice notes (`.ogg` / `.mp3`), plain text, and images via WhatsApp.
 - Kapso transcribes audio automatically and delivers the transcript alongside the message — no separate transcription step needed.
 - Gemini receives the transcript as plain text and extracts structured data in a single pass.
+- For images: Kapso delivers the image URL in the webhook payload; the bot downloads the image bytes and passes them to Gemini as a multimodal input alongside any user caption.
+- Gemini Vision identifies health-relevant content in images: food, meals, workout screens, body metrics, nutrition labels, etc.
+- `media_type` is recorded as `"image"` in the log entry.
 
 ### FR2 – Intent Recognition
 
@@ -123,7 +126,7 @@ Before any logging or response, the system must classify the user's input into o
 
 | Intent | Description | Examples |
 |---|---|---|
-| **Log** | User is recording health data | "Lunch was pasta", "I have a headache", "Ran 5km" |
+| **Log** | User is recording health data | "Lunch was pasta", "I have a headache", "Ran 5km", [photo of a meal], [photo of a treadmill screen] |
 | **Query** | User is asking a health-related question or summary | "How was my mood this week?", "What is gluten?", "Am I sleeping enough?" |
 | **Unrecognized** | Message is unrelated to the service scope | "Send me a joke", "What's the weather?", "Hello" |
 | **Profile Update** | User shares persistent personal information | "I'm lactose intolerant", "My name is Rodrigo", "I'm vegetarian" |
@@ -140,6 +143,7 @@ This prevents polluting the JSON Brain with irrelevant data and ensures the hist
 - Only triggered after a **Log** intent is confirmed (see FR2).
 - Categorize the log into one of: **Nutrition · Symptom · Activity · Sleep · Mood**.
 - Extract data into a consistent JSON schema with fields such as `ingredients`, `duration`, and `intensity`.
+- For image-based logs, `raw_input` stores the image URL and any user caption.
 
 **Example log entry:**
 
@@ -181,6 +185,27 @@ This prevents polluting the JSON Brain with irrelevant data and ensures the hist
 - Insight must reference at least one past log entry when available.
 
 > **Example:** *"You've reported low energy 30 minutes after eating pasta twice this week. Consider testing a lower-carb lunch tomorrow."*
+
+### FR6 – Image Response Requirements
+
+Every reply to an image message must contain three parts, in order:
+
+1. **Acknowledgement** — describe what was detected in the image in warm, natural language.
+   > *"Oh nice, I can see a plate of rice, beans, and grilled chicken!"*
+
+2. **Positive recognition** — celebrate good behaviour when present before any suggestion. If the choice is not ideal, frame it warmly, never judgmentally.
+   > *"That's a solid balanced meal — good protein, complex carbs, and reasonable portions."*
+   > *"That looks like a treat meal — totally fine, everyone needs those!"*
+   > If the user is on a streak: *"Three solid meals in a row — that's real consistency."*
+
+3. **One personalised recommendation** — a single actionable tip framed as encouragement, grounded in the image and the user's history.
+   > *"Adding a handful of greens tomorrow would make this streak even stronger."*
+
+**Tone rules (hard constraints for all image replies):**
+- Always lead with what the user did well before suggesting improvements.
+- Never use "avoid", "you should", "you must" — use "you might try", "one option is", "have you considered".
+- Acknowledge streaks explicitly when the user has been consistent.
+- If the image is not health-relevant (meme, landscape, selfie with no health signal), classify as `unrecognized` and reply with the standard onboarding message.
 
 ---
 
@@ -299,7 +324,7 @@ bot.handle_inbound(msg, client)             (bot.py)
       "timestamp": "ISO8601",
       "category": "Nutrition | Symptom | Activity | Sleep | Mood",
       "raw_input": "string",
-      "media_type": "text | audio",
+      "media_type": "text | audio | image",
       "structured": {}
     }
   ]
@@ -316,6 +341,9 @@ bot.handle_inbound(msg, client)             (bot.py)
 | US-02 | As a user, I want the assistant to remember my allergies so it can warn me proactively. |
 | US-03 | As a user, I want to ask "How has my mood been this week?" and get a summary based on my logs. |
 | US-04 | As a user, I want to receive a health insight after every message without asking for it. |
+| US-05 | As a user, I want to send a photo of my meal so BioVibe can log the nutritional content without me describing it. |
+| US-06 | As a user, I want to send a photo of my workout screen so BioVibe can log my activity metrics automatically. |
+| US-07 | As a user, I want BioVibe to tell me when I'm doing well so I feel motivated to keep going. |
 
 ---
 
@@ -330,7 +358,6 @@ bot.handle_inbound(msg, client)             (bot.py)
 ## 9. Out of Scope (Future Iterations)
 
 - Apple Health / Google Fit integration
-- Image recognition of meals
 - Subscription / payment gateways
 - Multi-language support
 - Production WhatsApp Business account onboarding

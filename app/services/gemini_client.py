@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 
+import httpx
 from google import genai
 from google.genai import types
 
@@ -60,6 +61,56 @@ class GeminiClient:
             logger.warning("Gemini returned non-JSON response: %s", raw)
             return {
                 "intent": "query",
+                "category": None,
+                "structured": {},
+                "reply": raw,
+            }
+
+    async def process_image(
+        self,
+        image_url: str,
+        caption: str,
+        brain: dict,
+    ) -> dict:
+        system_prompt = (
+            self._load_prompt()
+            .replace("{user_profile}", json.dumps(brain["profile"]))
+            .replace("{health_summary}", brain["health_summary"] or "No summary yet.")
+            .replace("{recent_logs}", json.dumps(brain["log_history"][-10:]))
+            .replace("{message_type}", "image")
+        )
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as http:
+            resp = await http.get(image_url)
+            resp.raise_for_status()
+            image_bytes = resp.content
+            mime_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        text_part = caption or "What do you see in this image? Classify and log any health-relevant content."
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=[image_part, text_part],
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+            ),
+        )
+
+        raw = response.text.strip()
+
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("Gemini image response non-JSON: %s", raw)
+            return {
+                "intent": "log",
                 "category": None,
                 "structured": {},
                 "reply": raw,
