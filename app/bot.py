@@ -1,12 +1,20 @@
 """
-Inbound WhatsApp handling: reply to users via Kapso.
+Inbound WhatsApp handling.
 
-Default demo replies with a fixed template that quotes what they sent. Replace
-``handle_inbound`` with LLM flows, payments, or state machines — keep it async.
+Thin orchestrator: parse text from the channel-specific message, ask the
+concierge agent for a reply, send it back through the channel.
 """
 
+import logging
+
+from app.channels.base import Channel
+from app.concierge import respond
+from app.concierge.i18n import get_locale
+from app.concierge.prompts import system_message
 from app.schemas.kapso import KapsoMessage
 from app.services.kapso_client import KapsoClient
+
+logger = logging.getLogger(__name__)
 
 
 def inbound_text(msg: KapsoMessage) -> str | None:
@@ -27,20 +35,27 @@ def inbound_text(msg: KapsoMessage) -> str | None:
     return None
 
 
-def _reply_body_for_demo(user_payload: str | None, message_type: str) -> str:
-    if user_payload:
-        quoted = user_payload
-    else:
-        quoted = f"a {message_type} message (send text for a full quote)"
-    return f"I just received: {quoted}. Lets start building 🚀"
-
-
-async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
+async def handle_inbound(msg: KapsoMessage, client: KapsoClient | Channel) -> None:
     """
     Called for each *inbound* message after webhook verification.
 
-    ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
+    The second argument is treated as a Channel; KapsoClient is wrapped on the
+    fly so existing webhook code keeps working.
     """
-    text = inbound_text(msg)
-    body = _reply_body_for_demo(text, msg.type)
-    await client.send_whatsapp_message(msg.phone_number, body)
+    from app.channels.kapso import KapsoChannel
+
+    channel: Channel = client if isinstance(client, Channel) else KapsoChannel(client)
+    user_id = msg.phone_number
+    user_text = inbound_text(msg)
+
+    if not user_text:
+        await channel.send_text(user_id, system_message(get_locale(user_id), "non_text"))
+        return
+
+    try:
+        reply = await respond(user_id, user_text)
+    except Exception:
+        logger.exception("concierge.respond failed")
+        reply = system_message(get_locale(user_id), "agent_error")
+
+    await channel.send_text(user_id, reply)
