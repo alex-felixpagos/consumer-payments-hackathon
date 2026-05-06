@@ -103,18 +103,34 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     if msg.interactive:
         button_reply = msg.interactive.get("button_reply") or {}
         if button_reply.get("id") == _PROFILE_SETUP_BTN_ID:
-            logger.info("OUTBOUND | to=%s message=<profile setup prompt>", msg.phone_number)
-            await client.send_whatsapp_message(
-                msg.phone_number,
-                "Great! Tell me a bit about yourself 👤\n\n"
-                "Feel free to share things like:\n\n"
-                "• Your name\n"
-                "• Dietary restrictions (vegan, lactose intolerant, gluten-free…)\n"
-                "• Allergies\n"
-                "• Health goals (lose weight, sleep better, more energy…)\n"
-                "• Any conditions I should know about\n\n"
-                "Just write it naturally — I'll take care of the rest! 🧠",
-            )
+            existing_brain = load_brain(user_id)
+            profile = existing_brain.get("profile", {})
+            name = profile.get("name")
+            traits = profile.get("traits") or []
+
+            if name or traits:
+                # Show existing profile
+                lines = ["Here's your current profile 👤\n"]
+                if name:
+                    lines.append(f"• *Name:* {name}")
+                if traits:
+                    lines.append("• *About you:* " + ", ".join(traits))
+                lines.append("\nJust send me a message to update anything — I'll add it automatically! ✏️")
+                reply = "\n".join(lines)
+            else:
+                reply = (
+                    "Let's set up your profile! 👤\n\n"
+                    "Feel free to share:\n\n"
+                    "• Your name\n"
+                    "• Dietary restrictions (vegan, lactose intolerant, gluten-free…)\n"
+                    "• Allergies\n"
+                    "• Health goals (lose weight, sleep better, more energy…)\n"
+                    "• Any conditions I should know about\n\n"
+                    "Just write it naturally — I'll take care of the rest! 🧠"
+                )
+
+            logger.info("OUTBOUND | to=%s message=<profile setup/view>", msg.phone_number)
+            await client.send_whatsapp_message(msg.phone_number, reply)
             return
 
     brain = load_brain(user_id)
