@@ -39,7 +39,7 @@ To be considered a successful hackathon submission, teams should follow these ru
 
 | Approach                  | When it fits                                                                                                                                                                                                                                  |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Branches on this repo** | Each **team** has **one branch** off `main` that they own (see `CONTRIBUTING.md`). Teammates push there; merge to `main` via PR when ready.                                                                                                      |
+| **Branches on this repo** | Each **team** has **one branch** off `main` that they own (see `CONTRIBUTING.md`). Teammates push there; merge to `main` via PR when ready.                                                                                                   |
 | **Fork**                  | You want your own copy under your GitHub user/org, or you only have permission to push to your fork. On GitHub: **Fork** → clone **your** fork → add `upstream` pointing at this starter → branch on the fork → open PRs back to `main` here. |
 
 
@@ -221,7 +221,9 @@ In Kapso “Add Webhook Endpoint” (or similar):
 - **Verify token:** must exactly match `KAPSO_VERIFY_TOKEN` in `.env`.
 - **Webhook type:** use what sandbox allows (usually **Kapso (events)**).
 - **Events:** enable **Message received**.
-- **Message debouncing:** keep it **off** for easier debugging.
+- **Message debouncing:** keep it **off** for easier debugging.  
+  
+
 
 ### 6) Quick checks ✅
 

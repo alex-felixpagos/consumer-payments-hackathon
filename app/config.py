@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     kapso_verify_token: str = Field(default="", alias="KAPSO_VERIFY_TOKEN")
     kapso_webhook_secret: str = Field(default="", alias="KAPSO_WEBHOOK_SECRET")
 
+    #: Base URL for receipt links in outbound WhatsApp (no trailing slash).
+    public_base_url: str = Field(default="http://127.0.0.1:8000", alias="PUBLIC_BASE_URL")
+
 
 @lru_cache
 def get_settings() -> Settings:

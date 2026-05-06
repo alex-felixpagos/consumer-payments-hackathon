@@ -48,7 +48,3 @@ class KapsoMessage(BaseModel):
     @property
     def direction(self) -> str:
         return self.kapso.direction
-
-    @property
-    def direction(self) -> str:
-        return self.kapso.direction
