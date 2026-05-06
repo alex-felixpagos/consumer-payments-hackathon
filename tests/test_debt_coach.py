@@ -65,7 +65,25 @@ def test_happy_path_build_reply() -> None:
     body = dc.build_reply(phone, "$450 due May 15")
     assert "3000" in body or "income" in body.lower()
     final = dc.build_reply(phone, "Income 3000, essentials 1800, flexible 500")
-    assert "feasible" in final.lower() or "450" in final
+    assert "payment plan is ready" in final.lower()
+    assert "simulated envelope" in final.lower()
+    assert "type **envelope**" not in final
+
+
+def test_budget_summary_response_has_reminder_button() -> None:
+    phone = "+10000000004"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+
+    response = dc.build_response(phone, "Income 3000, essentials 1800, flexible 500")
+
+    assert response.buttons == (dc.ReplyButton(id="reminder", title="Show reminder"),)
+    assert "Next, I can show the day-before payment reminder." in response.body
+
+
+def test_show_reminder_button_title_routes_to_reminder() -> None:
+    assert dc.parse_command("Show reminder") == "reminder"
 
 
 def test_welcome_outbound_has_buttons() -> None:
