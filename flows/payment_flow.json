@@ -1,0 +1,69 @@
+{
+  "version": "7.0",
+  "data_api_version": "3.0",
+  "routing_model": { "PAYMENT": [] },
+  "screens": [
+    {
+      "id": "PAYMENT",
+      "title": "Payment",
+      "terminal": true,
+      "data": {
+        "amount_display": {
+          "type": "string",
+          "__example__": "$1.00 USD"
+        },
+        "amount_cents": {
+          "type": "number",
+          "__example__": 100
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "${data.amount_display}"
+          },
+          {
+            "type": "TextSubheading",
+            "text": "Enter your card to complete payment"
+          },
+          {
+            "type": "TextInput",
+            "name": "card_number",
+            "label": "Card number",
+            "input-type": "number",
+            "required": true,
+            "helper-text": "Test card: 4242 4242 4242 4242"
+          },
+          {
+            "type": "TextInput",
+            "name": "expiration",
+            "label": "Expiration (MM/YY)",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "cvv",
+            "label": "CVV",
+            "input-type": "number",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Pay now",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "card_number": "${form.card_number}",
+                "expiration": "${form.expiration}",
+                "cvv": "${form.cvv}",
+                "amount_cents": "${data.amount_cents}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

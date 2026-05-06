@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     kapso_api_url: str = Field(default="https://api.kapso.ai", alias="KAPSO_API_URL")
     kapso_verify_token: str = Field(default="", alias="KAPSO_VERIFY_TOKEN")
     kapso_webhook_secret: str = Field(default="", alias="KAPSO_WEBHOOK_SECRET")
+    kapso_flow_id: str = Field(default="", alias="KAPSO_FLOW_ID")
+
+    stripe_secret_key: str = Field(default="", alias="STRIPE_SECRET_KEY")
+    stripe_currency: str = Field(default="usd", alias="STRIPE_CURRENCY")
 
 
 @lru_cache

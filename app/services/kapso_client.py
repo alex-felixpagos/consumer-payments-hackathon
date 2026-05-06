@@ -157,6 +157,46 @@ class KapsoClient:
             payload["interactive"]["footer"] = {"text": footer}
         return await self._post_messages(payload, f"cta_url to {to}")
 
+    async def send_flow_message(
+        self,
+        to: str,
+        flow_id: str,
+        flow_cta: str,
+        body_text: str,
+        screen: str,
+        initial_data: dict[str, Any] | None = None,
+        flow_token: str | None = None,
+        header: str | None = None,
+        footer: str | None = None,
+    ) -> dict[str, Any]:
+        parameters: dict[str, Any] = {
+            "flow_message_version": "3",
+            "flow_id": flow_id,
+            "flow_cta": flow_cta,
+            "flow_action": "navigate",
+            "flow_action_payload": {
+                "screen": screen,
+                "data": initial_data or {},
+            },
+        }
+        if flow_token:
+            parameters["flow_token"] = flow_token
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": self._normalize_to(to),
+            "type": "interactive",
+            "interactive": {
+                "type": "flow",
+                "body": {"text": body_text},
+                "action": {"name": "flow", "parameters": parameters},
+            },
+        }
+        if header:
+            payload["interactive"]["header"] = {"type": "text", "text": header}
+        if footer:
+            payload["interactive"]["footer"] = {"text": footer}
+        return await self._post_messages(payload, f"flow {flow_id} to {to}")
+
     async def send_location_request(self, to: str, body_text: str) -> dict[str, Any]:
         payload = {
             "messaging_product": "whatsapp",
