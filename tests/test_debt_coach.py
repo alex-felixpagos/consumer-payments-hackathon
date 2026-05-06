@@ -39,12 +39,14 @@ def test_parse_command_exact() -> None:
     assert dc.parse_command("menu") == "menu"
     assert dc.parse_command("help_principal") == "help principal"
     assert dc.parse_command("help principal") == "help principal"
+    assert dc.parse_command("im_short") == "im short"
+    assert dc.parse_command("I'm short") == "im short"
     assert dc.parse_command("demo shortfall") == "demo shortfall"
 
 
 def test_parse_command_natural_shortfall_phrase() -> None:
-    assert dc.parse_command("I can't cover principal") == "help principal"
-    assert dc.parse_command("Can you help with principal?") == "help principal"
+    assert dc.parse_command("I can't cover principal") == "im short"
+    assert dc.parse_command("Can you help with principal?") == "im short"
 
 
 def test_parse_budget_triple() -> None:
@@ -127,12 +129,28 @@ def test_budget_summary_response_has_next_step_buttons() -> None:
     response = dc.build_response(phone, "500")
 
     ids = {b.id for b in response.buttons}
-    assert ids == {"envelope", "reminder", "help_principal"}
-    assert "Tap a button" in response.body or "envelope" in response.body.lower()
+    assert ids == {"reminder", "im_short"}
+    assert response.buttons == (
+        dc.ReplyButton(id="reminder", title="Show reminder"),
+        dc.ReplyButton(id="im_short", title="I'm short"),
+    )
+    assert "Tap a button" in response.body
 
 
 def test_show_reminder_button_title_routes_to_reminder() -> None:
     assert dc.parse_command("Show reminder") == "reminder"
+
+
+def test_reminder_mentions_im_short_next_step() -> None:
+    phone = "+10000000011"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+
+    out = dc.build_reply(phone, "reminder")
+
+    assert "If covering principal is stressful" in out
+    assert "I'm short" in out
 
 
 def test_welcome_outbound_has_buttons() -> None:
@@ -172,6 +190,21 @@ def test_help_principal_demo_shortfall() -> None:
     assert "120" in out
     assert "general options" in out.lower()
     assert "lender terms" in out.lower()
+
+
+def test_im_short_uses_demo_shortfall_when_happy_path_has_no_gap() -> None:
+    phone = "+10000000012"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+    dc.build_reply(phone, "3000")
+    dc.build_reply(phone, "1800")
+    dc.build_reply(phone, "500")
+
+    out = dc.build_reply(phone, "I'm short")
+
+    assert "120" in out
+    assert "general options" in out.lower()
 
 
 def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
