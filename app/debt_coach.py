@@ -527,11 +527,11 @@ def _cmd_hp_minimum_pay(_session: UserSession) -> str:
     )
 
 
-def _cmd_demo_shortfall(session: UserSession) -> str:
+def _cmd_demo_shortfall(session: UserSession) -> CoachReply:
     session.available_for_payment_override = 330.0
-    return (
-        "Demo mode: treating *$330* as available for this payment (override). "
-        f"Now text: {_CMD_HELP_PRINCIPAL}"
+    return CoachReply(
+        body="Treating *$330* as available for this payment (demo). Tap *I'm short* to see your options.",
+        buttons=(ReplyButton(id="im_short", title="I'm short"),),
     )
 
 
