@@ -73,9 +73,9 @@ def test_happy_path_build_reply() -> None:
     assert "debt" in welcome and ("glad" in welcome or "here" in welcome)
     assert dc.build_reply(phone, "Credit card").startswith("Thanks")
     body = dc.build_reply(phone, "$450 due May 15")
-    assert "step 1" in body.lower() and "income" in body.lower()
-    assert "step 2" in dc.build_reply(phone, "3000").lower()
-    assert "step 3" in dc.build_reply(phone, "1800").lower()
+    assert "income" in body.lower()
+    assert "essentials" in dc.build_reply(phone, "3000").lower()
+    assert "flexible" in dc.build_reply(phone, "1800").lower()
     final = dc.build_reply(phone, "500")
     assert "payment plan is ready" in final.lower()
     assert "simulated envelope" in final.lower()
@@ -85,13 +85,13 @@ def test_amount_due_split_flow() -> None:
     phone = "+10000000007"
     dc.build_reply(phone, "start")
     after_debt = dc.build_reply(phone, "Credit card")
-    assert "step 1 of 2" in after_debt.lower()
+    assert "how much" in after_debt.lower()
 
     after_amount = dc.build_reply(phone, "450")
-    assert "step 2 of 2" in after_amount.lower()
+    assert "when is it due" in after_amount.lower()
 
     after_due = dc.build_reply(phone, "May 15")
-    assert "step 1 of 3" in after_due.lower() and "income" in after_due.lower()
+    assert "income" in after_due.lower()
 
 
 def test_amount_step_invalid_input_reprompts() -> None:
@@ -99,7 +99,7 @@ def test_amount_step_invalid_input_reprompts() -> None:
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Card")
     out = dc.build_reply(phone, "no number here")
-    assert "step 1 of 2" in out.lower()
+    assert "how much" in out.lower()
 
 
 def test_amount_due_combined_shortcut_still_works() -> None:
@@ -107,7 +107,7 @@ def test_amount_due_combined_shortcut_still_works() -> None:
     dc.build_reply(phone, "start")
     dc.build_reply(phone, "Credit card")
     body = dc.build_reply(phone, "$450 due May 15")
-    assert "step 1 of 3" in body.lower() and "income" in body.lower()
+    assert "income" in body.lower()
 
 
 def test_budget_one_line_shortcut_on_income_step() -> None:
@@ -192,13 +192,37 @@ def test_natural_shortfall_phrase_routes_to_help_principal() -> None:
     assert "general options" in out.lower()
 
 
-def test_menu_command_returns_interactive_list() -> None:
+def test_menu_command_returns_interactive_list_idle_state() -> None:
+    """With no goal yet, menu only shows start, set-goal, demo-shortfall."""
     phone = "+10000000009"
     out = dc.build_outbound(phone, "menu")
     assert out.has_list
-    assert out.list_button == "See commands"
+    assert out.list_button == "See options"
     assert len(out.list_sections) == 1
     rows = out.list_sections[0]["rows"]
-    assert len(rows) >= 8
-    assert any(r["id"] == "m_budget" for r in rows)
-    assert all("description" in r and r["description"] for r in rows)
+    ids = {r["id"] for r in rows}
+    assert ids == {"m_start", "m_goal", "m_demo_shortfall"}
+    assert all("description" not in r for r in rows)
+    assert all(r["title"][0] in {"🚀", "🎯", "🧪"} for r in rows)
+    assert "m_hello" not in ids and "m_menu" not in ids
+
+
+def test_menu_expands_after_goal_is_set() -> None:
+    """After a payment goal exists, menu offers budget, envelope, reminder, help."""
+    phone = "+10000000019"
+    dc.build_reply(phone, "start")
+    dc.build_reply(phone, "Credit card")
+    dc.build_reply(phone, "$450 due May 15")
+
+    out = dc.build_outbound(phone, "menu")
+    rows = out.list_sections[0]["rows"]
+    ids = {r["id"] for r in rows}
+    assert {
+        "m_start",
+        "m_budget",
+        "m_envelope",
+        "m_reminder",
+        "m_help_principal",
+        "m_demo_shortfall",
+    }.issubset(ids)
+    assert "m_goal" not in ids  # goal already complete
