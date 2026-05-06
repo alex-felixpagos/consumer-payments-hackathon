@@ -105,11 +105,11 @@ Crossed-out or grayed showtimes mean sold out — show them but mark them as una
 
 After the user picks a cinema and showtime:
 
-1. Send a static image of the auditorium seat map.
-2. Ask the user to reply with their preferred row and seat numbers.
-3. Validate availability in real time against the provider API.
-4. Confirm the hold immediately: "Seats held for 5 minutes while you complete payment."
-5. If the seats are taken, respond instantly with the next best available options — do not send the user back to the seat map from scratch.
+1. Automatically assign the best available seats in the auditorium for their group size. Best means: center section, mid-row, away from screen and exits.
+2. Confirm the selection in one message. Example: "Got you the best seats in the house. B4 and B5, center section."
+3. Hold the seats immediately for 5 minutes while payment completes.
+4. If the user wants different seats, tell them kindly that seats are auto-assigned to give them the best experience, and that they can ask the cinema staff for a swap on arrival.
+5. If no good seats are available, tell the user and offer the next available showtime instead.
 
 ---
 
