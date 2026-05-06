@@ -5,8 +5,12 @@ Default demo replies with a fixed template that quotes what they sent. Replace
 ``handle_inbound`` with LLM flows, payments, or state machines — keep it async.
 """
 
+import logging
+
 from app.schemas.kapso import KapsoMessage
 from app.services.kapso_client import KapsoClient
+
+logger = logging.getLogger(__name__)
 
 
 def inbound_text(msg: KapsoMessage) -> str | None:
@@ -42,5 +46,16 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
     """
     text = inbound_text(msg)
+
+    logger.info(
+        "INBOUND | from=%s type=%s message=%r",
+        msg.phone_number,
+        msg.type,
+        text or f"<{msg.type} — no text extracted>",
+    )
+
     body = _reply_body_for_demo(text, msg.type)
+
+    logger.info("OUTBOUND | to=%s message=%r", msg.phone_number, body)
+
     await client.send_whatsapp_message(msg.phone_number, body)

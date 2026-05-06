@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     kapso_verify_token: str = Field(default="", alias="KAPSO_VERIFY_TOKEN")
     kapso_webhook_secret: str = Field(default="", alias="KAPSO_WEBHOOK_SECRET")
 
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    gemini_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_MODEL")
+
 
 @lru_cache
 def get_settings() -> Settings:
