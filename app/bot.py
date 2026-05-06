@@ -7,6 +7,11 @@ Default demo replies with a fixed template that quotes what they sent. Replace
 
 from app.schemas.kapso import KapsoMessage
 from app.services.kapso_client import KapsoClient
+from app.services.rates_service import (
+    handle_rates_message,
+    is_awaiting_rates_input,
+    is_rates_request,
+)
 
 
 def inbound_text(msg: KapsoMessage) -> str | None:
@@ -42,5 +47,10 @@ async def handle_inbound(msg: KapsoMessage, client: KapsoClient) -> None:
     ``msg.phone_number`` is the user to reply to (same format Kapso expects for ``to``).
     """
     text = inbound_text(msg)
-    body = _reply_body_for_demo(text, msg.type)
+
+    if is_rates_request(text) or is_awaiting_rates_input(msg.phone_number):
+        body = await handle_rates_message(msg.phone_number, text)
+    else:
+        body = _reply_body_for_demo(text, msg.type)
+
     await client.send_whatsapp_message(msg.phone_number, body)
