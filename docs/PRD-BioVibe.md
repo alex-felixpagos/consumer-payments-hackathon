@@ -145,6 +145,11 @@ This prevents polluting the JSON Brain with irrelevant data and ensures the hist
 - Extract data into a consistent JSON schema with fields such as `ingredients`, `duration`, and `intensity`.
 - For image-based logs, `raw_input` stores the image URL and any user caption.
 
+**Calorie estimation (Nutrition logs):**
+- Gemini must always attempt to estimate calories for every Nutrition log entry, whether the input is text, audio, or an image of food.
+- The estimate is based on typical portion sizes and the model's food knowledge. It is surfaced to the user in the reply (e.g. "around 550 kcal").
+- `estimated_calories` is set to `null` only when the food is completely unidentifiable.
+
 **Example log entry:**
 
 ```json
@@ -152,6 +157,7 @@ This prevents polluting the JSON Brain with irrelevant data and ensures the hist
   "timestamp": "2026-05-05T14:30:00Z",
   "category": "Nutrition",
   "raw_input": "Had a bowl of pasta with cheese for lunch",
+  "media_type": "text",
   "structured": {
     "meal": "pasta with cheese",
     "ingredients": ["pasta", "cheese"],
@@ -344,6 +350,7 @@ bot.handle_inbound(msg, client)             (bot.py)
 | US-05 | As a user, I want to send a photo of my meal so BioVibe can log the nutritional content without me describing it. |
 | US-06 | As a user, I want to send a photo of my workout screen so BioVibe can log my activity metrics automatically. |
 | US-07 | As a user, I want BioVibe to tell me when I'm doing well so I feel motivated to keep going. |
+| US-08 | As a user, I want BioVibe to estimate the calories of my meal automatically so I don't have to look them up myself. |
 
 ---
 
